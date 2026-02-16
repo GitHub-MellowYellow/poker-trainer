@@ -37,19 +37,3 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
-```
-
-Потом в настройках репо: Settings → Pages → Source: **GitHub Actions** (не branch).
-
-После этого каждый пуш в main автоматически билдит и деплоит. Не нужно руками собирать dist и пушить отдельно.
-
-## Итого структура репо
-```
-poker-trainer/
-├── .github/workflows/deploy.yml   (если вариант Б)
-├── index.html
-├── package.json
-├── vite.config.js
-└── src/
-    ├── main.jsx
-    └── App.jsx                     (твой компонент)
