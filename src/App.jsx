@@ -1,942 +1,773 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 
 // ═══════════════════════════════════════════════════════════════
-// CONSTANTS
+// DESIGN TOKENS
 // ═══════════════════════════════════════════════════════════════
 
-const SUITS = ["♠","♥","♦","♣"];
-const RANKS = ["2","3","4","5","6","7","8","9","T","J","Q","K","A"];
-const RV = {2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,T:10,J:11,Q:12,K:13,A:14};
-const RANK_DISPLAY = {T:"10",J:"J",Q:"Q",K:"K",A:"A"};
-const RANK_NAME = {2:"deuce",3:"three",4:"four",5:"five",6:"six",7:"seven",8:"eight",9:"nine",T:"ten",J:"jack",Q:"queen",K:"king",A:"ace"};
+const T = {
+  font: "Helvetica, Arial, sans-serif",
+  weight: 700,
+  maxW: 480,
+  pagePad: 14,
 
-const POS_6 = ["UTG","MP","CO","BTN","SB","BB"];
-const POS_3 = ["BTN","SB","BB"];
+  bg: "#f0e8d8",
+  panel: "#faf6ee",
+  table: "#2b3a52",
+  tableBorder: "#3a506a",
+  gold: "#c49a2a",
+  goldDark: "#a67e18",
+  text: "#2b2b24",
+  textMid: "#5c5a50",
+  textDim: "#8a8878",
+  cream: "#faf6ee",
+  creamBorder: "#e8e0d0",
+  border: "#d8d0c0",
+  green: "#4a8a5a",
+  red: "#b84a3a",
 
-const OPP_TYPES = [
-  { id:"tight", name:"Careful", emoji:"🛡️", color:"#2b5a8a", desc:"Plays few hands, only bets strong" },
-  { id:"neutral", name:"Regular", emoji:"⚖️", color:"#6b6b5b", desc:"Balanced, standard play" },
-  { id:"aggro", name:"Aggro", emoji:"🔥", color:"#78040d", desc:"Bets wide, bluffs often" },
-];
+  spade: "#2a6aaa",
+  heart: "#c0443a",
+  diamond: "#d4882a",
+  club: "#2a7a5a",
 
-const STREET_NAMES = { preflop:"Preflop", flop:"Flop", turn:"Turn", river:"River" };
+  pos: { UTG:"#c0553a", MP:"#d48a2a", CO:"#3a8a7a", BTN:"#c49a2a", SB:"#2a6aaa", BB:"#9a5a8a" },
+  oppTight: "#3a7a9a",
+  oppNeutral: "#6b7b6b",
+  oppAggro: "#c0553a",
 
-// ── Palette ──
-const P = {
-  bg:        "#f0e8d8",       // buff / warm cream
-  bgDark:    "#e6dccc",       // slightly darker for panels
-  navy:      "#2b3a52",       // police blue
-  navyLight: "#3d5170",
-  gold:      "#d4a030",       // marigold
-  goldDark:  "#b8891a",
-  red:       "#78040d",       // deep cherry
-  green:     "#4a7a3a",       // olive leaf
-  greenLight:"#6b9a50",
-  text:      "#2b2b24",       // near-black warm
-  textMid:   "#5c5a50",       // medium text
-  textLight: "#8a8878",       // muted
-  cream:     "#faf6ee",       // vanilla custard (card bg)
-  white:     "#ffffff",
-  boardBg:   "#2b3a52",       // navy for board strip
+  headerPad: 18,
+  headerR: 14,
+  bankrollFont: 34,
+
+  gapToTable: 36,
+  gapNarrToHand: 14,
+
+  // Table — FIXED dimensions, never changes
+  tableR: 55,
+  tablePadX: 24,
+  // Internal fixed heights for table rows (top to bottom):
+  // [opponents overlap top edge]
+  // row1: bet/check pill = 36px
+  // gap1: 12px
+  // row2: board cards = 100px
+  // gap2: 12px
+  // row3: pot pill = 36px
+  // [YOU overlaps bottom edge]
+  betRowH: 36,
+  boardRowH: 100,
+  potRowH: 36,
+  innerGap: 12,
+  // Derived: total inner = 36+12+100+12+36 = 196
+  // Plus padding for circles: top 60, bottom 60
+  tableTopPad: 50,
+  tableBotPad: 45,
+ 
+  seat: 52,
+  seatBorder: 3,
+  seatLabel: 12,
+
+  bcW: 72,
+  bcH: 100,
+  bcR: 8,
+  bcRank: 48,
+  bcSuit: 22,
+  bcGap: 7,
+
+  cardH: 196,
+  cardW: 140,
+  cardR: 10,
+  cardRank: 100,
+  cardRank10: 100,
+  cardSuit: 34,
+  cardSplit: 0.63,
+  cardGap: 10,
+
+  btnR: 16,
+  btnPadY: 11,
+  btnFont: 13,
+
+  narrH: 220,
+  narrR: 12,
+  narrFont: 15,
+  narrLineH: 1.75,
+
+  chip: 28,
+  chipHeader: 34,
+  chipPot: 22,
+  chipInline: 18,
+
+  pillR: 20,
+  pillPX: 18,
+  pillPY: 6,
+  potFont: 19,
+  betFont: 16,
 };
 
-// ═══════════════════════════════════════════════════════════════
-// PREFLOP RANGES
-// ═══════════════════════════════════════════════════════════════
+// Computed table height
+var TABLE_H = T.tableTopPad + T.betRowH + T.innerGap + T.boardRowH + T.innerGap + T.potRowH + T.tableBotPad;
 
-const OPEN = {
+var SC = {};
+SC["♠"] = T.spade;
+SC["♥"] = T.heart;
+SC["♦"] = T.diamond;
+SC["♣"] = T.club;
+
+var SUITS = ["♠","♥","♦","♣"];
+var RANKS = ["2","3","4","5","6","7","8","9","T","J","Q","K","A"];
+var RV = {2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,T:10,J:11,Q:12,K:13,A:14};
+var RD = {T:"10",J:"J",Q:"Q",K:"K",A:"A"};
+var RN = {2:"deuce",3:"three",4:"four",5:"five",6:"six",7:"seven",8:"eight",9:"nine",T:"ten",J:"jack",Q:"queen",K:"king",A:"ace"};
+var P6 = ["UTG","MP","CO","BTN","SB","BB"];
+var P3 = ["BTN","SB","BB"];
+var SN = { preflop:"Preflop", flop:"Flop", turn:"Turn", river:"River" };
+var OPP = [
+  { id:"tight", name:"Careful", emoji:"🛡️", color:T.oppTight },
+  { id:"neutral", name:"Regular", emoji:"⚖️", color:T.oppNeutral },
+  { id:"aggro", name:"Aggro", emoji:"🔥", color:T.oppAggro },
+];
+
+// Ranges
+var OPEN = {
   UTG: new Set(["AA","KK","QQ","JJ","TT","99","88","77","AKs","AQs","AJs","ATs","A5s","A4s","AKo","AQo","KQs","KJs","KTs","QJs","QTs","JTs","T9s","98s"]),
   MP: new Set(["AA","KK","QQ","JJ","TT","99","88","77","66","AKs","AQs","AJs","ATs","A9s","A5s","A4s","A3s","AKo","AQo","AJo","KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s","98s","87s"]),
   CO: new Set(["AA","KK","QQ","JJ","TT","99","88","77","66","55","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","KQs","KJs","KTs","K9s","K8s","K7s","KQo","KJo","KTo","QJs","QTs","Q9s","Q8s","QJo","QTo","JTs","J9s","J8s","JTo","T9s","T8s","98s","97s","87s","76s","65s"]),
   BTN: new Set(["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s","KQo","KJo","KTo","K9o","QJs","QTs","Q9s","Q8s","Q7s","QJo","QTo","JTs","J9s","J8s","J7s","JTo","T9s","T8s","T7s","98s","97s","96s","87s","86s","76s","75s","65s","64s","54s"]),
   SB: new Set(["AA","KK","QQ","JJ","TT","99","88","77","66","55","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","KQs","KJs","KTs","K9s","K8s","KQo","KJo","KTo","QJs","QTs","Q9s","QJo","JTs","J9s","T9s","98s","87s"]),
 };
-
-const BB_VS = {
-  threebet: new Set(["AA","KK","QQ","JJ","AKs","AKo","AQs","A5s","A4s"]),
-  call: new Set(["TT","99","88","77","66","55","44","33","22","AJs","ATs","A9s","A8s","A7s","A6s","A3s","A2s","AQo","AJo","KQs","KJs","KTs","K9s","KQo","QJs","QTs","Q9s","JTs","J9s","T9s","T8s","98s","97s","87s","76s","65s","54s"]),
-};
-
-const SB_VS = {
-  threebet: new Set(["AA","KK","QQ","JJ","TT","AKs","AKo","AQs","AJs"]),
-  call: new Set(["99","88","77","ATs","A9s","AQo","KQs","KJs","QJs","JTs","T9s"]),
-};
+var BB_VS = { threebet: new Set(["AA","KK","QQ","JJ","AKs","AKo","AQs","A5s","A4s"]), call: new Set(["TT","99","88","77","66","55","44","33","22","AJs","ATs","A9s","A8s","A7s","A6s","A3s","A2s","AQo","AJo","KQs","KJs","KTs","K9s","KQo","QJs","QTs","Q9s","JTs","J9s","T9s","T8s","98s","97s","87s","76s","65s","54s"]) };
+var SB_VS = { threebet: new Set(["AA","KK","QQ","JJ","TT","AKs","AKo","AQs","AJs"]), call: new Set(["99","88","77","ATs","A9s","AQo","KQs","KJs","QJs","JTs","T9s"]) };
 
 // ═══════════════════════════════════════════════════════════════
-// UTILITIES
+// UTILS
 // ═══════════════════════════════════════════════════════════════
 
-function shuffle(arr) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-function createDeck() {
-  const d = [];
-  for (const s of SUITS) for (const r of RANKS) d.push({ rank: r, suit: s });
-  return d;
-}
-
-function cardStr(c) { return (RANK_DISPLAY[c.rank] || c.rank) + c.suit; }
-
-function handNotation(c1, c2) {
-  const v1 = RV[c1.rank], v2 = RV[c2.rank];
-  const hi = v1 >= v2 ? c1 : c2, lo = v1 >= v2 ? c2 : c1;
-  if (hi.rank === lo.rank) return hi.rank + lo.rank;
-  return hi.rank + lo.rank + (hi.suit === lo.suit ? "s" : "o");
-}
+function shuffle(a){var r=a.slice();for(var i=r.length-1;i>0;i--){var j=0|Math.random()*(i+1);var t=r[i];r[i]=r[j];r[j]=t;}return r;}
+function mkDeck(){var d=[];for(var i=0;i<SUITS.length;i++)for(var j=0;j<RANKS.length;j++)d.push({rank:RANKS[j],suit:SUITS[i]});return d;}
+function cstr(c){return(RD[c.rank]||c.rank)+c.suit;}
+function hn(c1,c2){var v1=RV[c1.rank],v2=RV[c2.rank];var hi=v1>=v2?c1:c2,lo=v1>=v2?c2:c1;if(hi.rank===lo.rank)return hi.rank+lo.rank;return hi.rank+lo.rank+(hi.suit===lo.suit?"s":"o");}
+function sortH(h){return h.slice().sort(function(a,b){return RV[b.rank]-RV[a.rank];});}
 
 // ═══════════════════════════════════════════════════════════════
-// HAND EVALUATOR
+// EVALUATOR
 // ═══════════════════════════════════════════════════════════════
 
-function combinations(arr, k) {
-  if (k === 0) return [[]];
-  if (arr.length < k) return [];
-  const [first, ...rest] = arr;
-  return [...combinations(rest, k - 1).map(c => [first, ...c]), ...combinations(rest, k)];
+function combos(arr,k){if(k===0)return[[]];if(arr.length<k)return[];var f=arr[0],r=arr.slice(1);return combos(r,k-1).map(function(c){return[f].concat(c);}).concat(combos(r,k));}
+
+function eval5(cards){
+  var vals=cards.map(function(c){return RV[c.rank];}).sort(function(a,b){return b-a;});
+  var suits=cards.map(function(c){return c.suit;});
+  var fl=suits.every(function(s){return s===suits[0];});
+  var st=false,sh=0;
+  var uSet={};vals.forEach(function(v){uSet[v]=1;});var u=Object.keys(uSet).map(Number).sort(function(a,b){return b-a;});
+  if(u.length===5&&u[0]-u[4]===4){st=true;sh=u[0];}
+  if(u.length===5&&u[0]===14&&u[1]===5&&u[2]===4&&u[3]===3&&u[4]===2){st=true;sh=5;}
+  var freq={};vals.forEach(function(v){freq[v]=(freq[v]||0)+1;});
+  var g=Object.keys(freq).map(function(v){return{v:+v,c:freq[v]};}).sort(function(a,b){return b.c-a.c||b.v-a.v;});
+  var S=function(r,s){return r*1e10+s;};
+  if(fl&&st)return sh===14?{rank:9,name:"Royal Flush",score:S(9,14)}:{rank:8,name:"Straight Flush",score:S(8,sh)};
+  if(g[0].c===4)return{rank:7,name:"Four of a Kind",score:S(7,g[0].v*100+g[1].v)};
+  if(g[0].c===3&&g.length>1&&g[1].c===2)return{rank:6,name:"Full House",score:S(6,g[0].v*100+g[1].v)};
+  if(fl)return{rank:5,name:"Flush",score:S(5,vals[0]*1e8+vals[1]*1e6+vals[2]*1e4+vals[3]*100+vals[4])};
+  if(st)return{rank:4,name:"Straight",score:S(4,sh)};
+  if(g[0].c===3)return{rank:3,name:"Three of a Kind",score:S(3,g[0].v*1e4+(g.length>1?g[1].v:0)*100+(g.length>2?g[2].v:0))};
+  if(g[0].c===2&&g.length>1&&g[1].c===2){var hi=Math.max(g[0].v,g[1].v),lo=Math.min(g[0].v,g[1].v);return{rank:2,name:"Two Pair",score:S(2,hi*1e4+lo*100+(g.length>2?g[2].v:0))};}
+  if(g[0].c===2)return{rank:1,name:"Pair",score:S(1,g[0].v*1e6+(g.length>1?g[1].v:0)*1e4+(g.length>2?g[2].v:0)*100+(g.length>3?g[3].v:0))};
+  return{rank:0,name:"High Card",score:S(0,vals[0]*1e8+vals[1]*1e6+vals[2]*1e4+vals[3]*100+vals[4])};
 }
 
-function eval5(cards) {
-  const vals = cards.map(c => RV[c.rank]).sort((a, b) => b - a);
-  const suits = cards.map(c => c.suit);
-  const isFlush = suits.every(s => s === suits[0]);
-  let isStraight = false, straightHi = 0;
-  const unique = [...new Set(vals)].sort((a,b) => b-a);
-  if (unique.length === 5 && unique[0] - unique[4] === 4) { isStraight = true; straightHi = unique[0]; }
-  if (unique.length === 5 && unique[0]===14 && unique[1]===5 && unique[2]===4 && unique[3]===3 && unique[4]===2) { isStraight = true; straightHi = 5; }
-  const freq = {};
-  vals.forEach(v => freq[v] = (freq[v]||0) + 1);
-  const groups = Object.entries(freq).map(([v,c]) => ({v:+v,c})).sort((a,b) => b.c-a.c || b.v-a.v);
-  const sc = (rank, sub) => rank * 1e10 + sub;
-  if (isFlush && isStraight) return straightHi===14 ? {rank:9,name:"Royal Flush",score:sc(9,14)} : {rank:8,name:"Straight Flush",score:sc(8,straightHi)};
-  if (groups[0].c===4) return {rank:7,name:"Four of a Kind",score:sc(7,groups[0].v*100+groups[1].v)};
-  if (groups[0].c===3 && groups[1]?.c===2) return {rank:6,name:"Full House",score:sc(6,groups[0].v*100+groups[1].v)};
-  if (isFlush) return {rank:5,name:"Flush",score:sc(5,vals[0]*1e8+vals[1]*1e6+vals[2]*1e4+vals[3]*100+vals[4])};
-  if (isStraight) return {rank:4,name:"Straight",score:sc(4,straightHi)};
-  if (groups[0].c===3) return {rank:3,name:"Three of a Kind",score:sc(3,groups[0].v*1e4+groups[1].v*100+(groups[2]?.v||0))};
-  if (groups[0].c===2 && groups[1]?.c===2) {
-    const hi=Math.max(groups[0].v,groups[1].v), lo=Math.min(groups[0].v,groups[1].v);
-    return {rank:2,name:"Two Pair",score:sc(2,hi*1e4+lo*100+(groups[2]?.v||0))};
-  }
-  if (groups[0].c===2) return {rank:1,name:"Pair",score:sc(1,groups[0].v*1e6+(groups[1]?.v||0)*1e4+(groups[2]?.v||0)*100+(groups[3]?.v||0))};
-  return {rank:0,name:"High Card",score:sc(0,vals[0]*1e8+vals[1]*1e6+vals[2]*1e4+vals[3]*100+vals[4])};
-}
-
-function evalHand(cards) {
-  if (cards.length < 5) return {rank:-1,name:"—",score:-1};
-  const combos = combinations(cards, 5);
-  let best = {rank:-1,score:-1};
-  for (const c of combos) { const e = eval5(c); if (e.score > best.score) best = e; }
-  return best;
+function evalH(cards){
+  if(cards.length<5)return{rank:-1,name:"--",score:-1};
+  var c=combos(cards,5);var b={rank:-1,score:-1};
+  for(var i=0;i<c.length;i++){var e=eval5(c[i]);if(e.score>b.score)b=e;}
+  return b;
 }
 
 // ═══════════════════════════════════════════════════════════════
-// DRAW DETECTION
+// DRAWS
 // ═══════════════════════════════════════════════════════════════
 
-function detectDraws(hole, board) {
-  const all = [...hole, ...board];
-  const draws = [];
-  const holeVals = hole.map(c => RV[c.rank]);
-  const holeSuits = hole.map(c => c.suit);
-
-  const sc = {};
-  all.forEach(c => sc[c.suit] = (sc[c.suit]||0) + 1);
-  for (const [suit, cnt] of Object.entries(sc)) {
-    if (cnt === 4 && holeSuits.includes(suit)) {
-      draws.push({ type:"flush draw", outs:9, desc:"flush draw" });
+function detectDraws(hole,board){
+  var all=hole.concat(board);var dr=[];
+  var hv=hole.map(function(c){return RV[c.rank];});
+  var hs=hole.map(function(c){return c.suit;});
+  var sc={};all.forEach(function(c){sc[c.suit]=(sc[c.suit]||0)+1;});
+  Object.keys(sc).forEach(function(s){if(sc[s]===4&&hs.indexOf(s)!==-1)dr.push({type:"flush draw",outs:9,desc:"flush draw"});});
+  var avSet={};all.forEach(function(c){avSet[RV[c.rank]]=1;});var av=Object.keys(avSet).map(Number);
+  if(av.indexOf(14)!==-1)av.push(1);av.sort(function(a,b){return a-b;});
+  var best=null;
+  for(var s=1;s<=10;s++){
+    var w=[];for(var v=s;v<s+5;v++)if(av.indexOf(v)!==-1)w.push(v);
+    if(w.length===4){
+      var hc=hv.some(function(v){return w.indexOf(v)!==-1;})||(hv.indexOf(14)!==-1&&w.indexOf(1)!==-1);
+      if(!hc)continue;
+      var f=[s,s+1,s+2,s+3,s+4];var m=f.filter(function(v){return av.indexOf(v)===-1;});
+      if(m.length===1){if(m[0]===s||m[0]===s+4){if(!best||best.type!=="OESD")best={type:"OESD",outs:8,desc:"open-ended straight draw"};}else{if(!best)best={type:"gutshot",outs:4,desc:"gutshot straight draw"};}}
     }
   }
-
-  const allVals = [...new Set(all.map(c => RV[c.rank]))];
-  if (allVals.includes(14)) allVals.push(1);
-  allVals.sort((a,b) => a-b);
-
-  let bestStraightDraw = null;
-  for (let start = 1; start <= 10; start++) {
-    const window = [];
-    for (let v = start; v < start + 5; v++) {
-      if (allVals.includes(v)) window.push(v);
-    }
-    if (window.length === 4) {
-      const holeContributes = holeVals.some(v => window.includes(v)) || (holeVals.includes(14) && window.includes(1));
-      if (!holeContributes) continue;
-      const full = [start,start+1,start+2,start+3,start+4];
-      const missing = full.filter(v => !allVals.includes(v));
-      if (missing.length === 1) {
-        const m = missing[0];
-        if (m === start || m === start+4) {
-          if (!bestStraightDraw || bestStraightDraw.type !== "OESD") bestStraightDraw = { type:"OESD", outs:8, desc:"open-ended straight draw" };
-        } else {
-          if (!bestStraightDraw) bestStraightDraw = { type:"gutshot", outs:4, desc:"gutshot straight draw" };
-        }
-      }
-    }
-  }
-  if (bestStraightDraw) draws.push(bestStraightDraw);
-  return draws;
+  if(best)dr.push(best);return dr;
 }
 
-function totalDrawOuts(draws) {
-  if (draws.length === 0) return 0;
-  let total = 0;
-  const hasFlush = draws.some(d => d.type === "flush draw");
-  const hasStraight = draws.some(d => d.type === "OESD" || d.type === "gutshot");
-  for (const d of draws) total += d.outs;
-  if (hasFlush && hasStraight) total -= 2;
-  return Math.max(total, 0);
-}
-
-function outsToEquity(outs, street) {
-  if (street === "flop") return Math.min(outs * 4 - Math.max(outs - 8, 0), 80) / 100;
-  return Math.min(outs * 2, 50) / 100;
-}
-
-function potOdds(pot, bet) {
-  if (bet <= 0) return 0;
-  return bet / (pot + bet);
-}
+function totalOuts(dr){if(!dr.length)return 0;var t=0;for(var i=0;i<dr.length;i++)t+=dr[i].outs;if(dr.some(function(d){return d.type==="flush draw";})&&dr.some(function(d){return d.type==="OESD"||d.type==="gutshot";}))t-=2;return Math.max(t,0);}
+function outsEq(outs,st){if(st==="flop")return Math.min(outs*4-Math.max(outs-8,0),80)/100;return Math.min(outs*2,50)/100;}
+function potOdds(pot,bet){return bet<=0?0:bet/(pot+bet);}
 
 // ═══════════════════════════════════════════════════════════════
-// HAND CLASSIFICATION
+// CLASSIFY
 // ═══════════════════════════════════════════════════════════════
 
-function classifyHand(hole, board) {
-  const all = [...hole, ...board];
-  const ev = evalHand(all);
-  const boardVals = board.map(c => RV[c.rank]).sort((a,b) => b-a);
-  const holeVals = hole.map(c => RV[c.rank]).sort((a,b) => b-a);
-  const draws = detectDraws(hole, board);
-  const drawOuts = totalDrawOuts(draws);
+function classify(hole,board){
+  var all=hole.concat(board);var ev=evalH(all);
+  var bv=board.map(function(c){return RV[c.rank];}).sort(function(a,b){return b-a;});
+  var hv=hole.map(function(c){return RV[c.rank];}).sort(function(a,b){return b-a;});
+  var dr=detectDraws(hole,board);var dO=totalOuts(dr);
+  var cat="trash",str=0,desc=ev.name;
 
-  let category = "trash", strength = 0, handDesc = ev.name;
-
-  if (ev.rank >= 4) {
-    const boardEv = board.length >= 5 ? evalHand(board) : { rank: -1 };
-    if (boardEv.rank >= ev.rank) { category = "marginal"; strength = 0.25; handDesc = `${ev.name} (mostly on board)`; }
-    else { category = "monster"; strength = 0.85 + ev.rank * 0.015; }
-  } else if (ev.rank === 3) { category = "strong"; strength = 0.65; handDesc = "Three of a Kind"; }
-  else if (ev.rank === 2) { category = "good"; strength = 0.55; handDesc = "Two Pair"; }
-  else if (ev.rank === 1) {
-    const allFreq = {};
-    all.map(c=>RV[c.rank]).forEach(v => allFreq[v]=(allFreq[v]||0)+1);
-    const pairVal = +Object.entries(allFreq).find(([,c]) => c===2)?.[0] || 0;
-    const boardFreq = {};
-    boardVals.forEach(v => boardFreq[v]=(boardFreq[v]||0)+1);
-    const boardPaired = Object.values(boardFreq).some(c => c >= 2);
-
-    if (boardPaired && !holeVals.includes(pairVal)) { category = "trash"; strength = 0.1; handDesc = "High card (board is paired)"; }
-    else if (holeVals[0] === holeVals[1] && holeVals[0] > boardVals[0]) { category = "strong"; strength = 0.55; handDesc = `Overpair (${RANK_NAME[hole[0].rank]}s)`; }
-    else if (holeVals[0] === holeVals[1]) {
-      if (holeVals[0] >= boardVals[boardVals.length - 1]) { category = "marginal"; strength = 0.22; handDesc = "Pocket pair below top card"; }
-      else { category = "weak"; strength = 0.15; handDesc = "Low pocket pair (underpair)"; }
-    } else if (pairVal === boardVals[0] && holeVals.includes(pairVal)) {
-      const kicker = holeVals.find(v => v !== pairVal) || 0;
-      if (kicker >= 11) { category = "good"; strength = 0.45; handDesc = "Top pair, strong kicker"; }
-      else if (kicker >= 8) { category = "marginal"; strength = 0.32; handDesc = "Top pair, medium kicker"; }
-      else { category = "marginal"; strength = 0.28; handDesc = "Top pair, weak kicker"; }
-    } else if (holeVals.includes(pairVal)) {
-      if (boardVals.length >= 2 && pairVal === boardVals[1]) { category = "weak"; strength = 0.2; handDesc = "Middle pair"; }
-      else { category = "weak"; strength = 0.14; handDesc = "Bottom pair"; }
-    } else { category = "trash"; strength = 0.1; handDesc = "Board pair (no connection)"; }
-  } else {
-    if (holeVals[0] === 14) { category = "weak"; strength = 0.12; handDesc = "Ace high"; }
-    else if (holeVals[0] >= 12) { category = "weak"; strength = 0.1; handDesc = "Overcards"; }
-    else { category = "trash"; strength = 0.06; handDesc = "Nothing"; }
+  if(ev.rank>=4){
+    var be=board.length>=5?evalH(board):{rank:-1};
+    if(be.rank>=ev.rank){cat="marginal";str=0.25;desc=ev.name+" (mostly on board)";}
+    else{cat="monster";str=0.85+ev.rank*0.015;}
+  }else if(ev.rank===3){cat="strong";str=0.65;desc="Three of a Kind";}
+  else if(ev.rank===2){cat="good";str=0.55;desc="Two Pair";}
+  else if(ev.rank===1){
+    var af={};all.forEach(function(c){var v=RV[c.rank];af[v]=(af[v]||0)+1;});
+    var pv=0;Object.keys(af).forEach(function(k){if(af[k]===2)pv=+k;});
+    var bf={};bv.forEach(function(v){bf[v]=(bf[v]||0)+1;});
+    var bp=Object.values(bf).some(function(c){return c>=2;});
+    if(bp&&hv.indexOf(pv)===-1){cat="trash";str=0.1;desc="High card (board is paired)";}
+    else if(hv[0]===hv[1]&&hv[0]>bv[0]){cat="strong";str=0.55;desc="Overpair ("+RN[hole[0].rank]+"s)";}
+    else if(hv[0]===hv[1]){if(hv[0]>=bv[bv.length-1]){cat="marginal";str=0.22;desc="Pocket pair below top card";}else{cat="weak";str=0.15;desc="Low pocket pair (underpair)";}}
+    else if(pv===bv[0]&&hv.indexOf(pv)!==-1){var k=hv[0]!==pv?hv[0]:hv[1];if(k>=11){cat="good";str=0.45;desc="Top pair, strong kicker";}else if(k>=8){cat="marginal";str=0.32;desc="Top pair, medium kicker";}else{cat="marginal";str=0.28;desc="Top pair, weak kicker";}}
+    else if(hv.indexOf(pv)!==-1){if(bv.length>=2&&pv===bv[1]){cat="weak";str=0.2;desc="Middle pair";}else{cat="weak";str=0.14;desc="Bottom pair";}}
+    else{cat="trash";str=0.1;desc="Board pair (no connection)";}
+  }else{
+    if(hv[0]===14){cat="weak";str=0.12;desc="Ace high";}
+    else if(hv[0]>=12){cat="weak";str=0.1;desc="Overcards";}
+    else{cat="trash";str=0.06;desc="Nothing";}
   }
 
-  let drawBonus = 0;
-  if (draws.some(d => d.type === "flush draw")) drawBonus += 0.12;
-  if (draws.some(d => d.type === "OESD")) drawBonus += 0.10;
-  if (draws.some(d => d.type === "gutshot")) drawBonus += 0.05;
-
-  return { category, strength: Math.min(strength + drawBonus, 1), handDesc, draws, drawOuts, ev, holeVals, boardVals };
+  var db=0;
+  if(dr.some(function(d){return d.type==="flush draw";}))db+=0.12;
+  if(dr.some(function(d){return d.type==="OESD";}))db+=0.10;
+  if(dr.some(function(d){return d.type==="gutshot";}))db+=0.05;
+  return{category:cat,strength:Math.min(str+db,1),handDesc:desc,draws:dr,drawOuts:dO,ev:ev,holeVals:hv,boardVals:bv};
 }
 
 // ═══════════════════════════════════════════════════════════════
-// SCENARIO GENERATION
+// SCENARIO
 // ═══════════════════════════════════════════════════════════════
 
-function generateScenario(positions) {
-  const streetWeights = [{street:"preflop",w:0.3},{street:"flop",w:0.35},{street:"turn",w:0.25},{street:"river",w:0.1}];
-  let r = Math.random(), cum = 0, street = "flop";
-  for (const sw of streetWeights) { cum += sw.w; if (r < cum) { street = sw.street; break; } }
-
-  const pos = positions[Math.floor(Math.random() * positions.length)];
-  const opp = OPP_TYPES[Math.floor(Math.random() * OPP_TYPES.length)];
-  const otherPos = positions.filter(p => p !== pos);
-  const oppPos = otherPos[Math.floor(Math.random() * otherPos.length)] || "BTN";
-
-  let playerHand, oppHand, board;
-  let attempts = 0;
-  while (attempts < 20) {
-    attempts++;
-    const deck = shuffle(createDeck());
-    playerHand = [deck[0], deck[1]];
-    oppHand = [deck[2], deck[3]];
-    const boardCount = street === "flop" ? 3 : street === "turn" ? 4 : street === "river" ? 5 : 0;
-    board = deck.slice(4, 4 + boardCount);
-    if (boardCount === 0) break;
-    if (boardCount >= 5) { const bEv = evalHand(board); if (bEv.rank >= 4) continue; }
-    const bf = {}; board.forEach(c => bf[c.rank] = (bf[c.rank]||0)+1);
-    if (Object.values(bf).some(v => v >= 3)) continue;
-    if (boardCount === 3) { const sf = {}; board.forEach(c => sf[c.suit] = (sf[c.suit]||0)+1); if (Object.values(sf).some(v => v >= 3) && Math.random() < 0.7) continue; }
+function genScenario(positions){
+  var sw=[{s:"preflop",w:0.3},{s:"flop",w:0.35},{s:"turn",w:0.25},{s:"river",w:0.1}];
+  var r=Math.random(),c=0,street="flop";
+  for(var i=0;i<sw.length;i++){c+=sw[i].w;if(r<c){street=sw[i].s;break;}}
+  var pos=positions[0|Math.random()*positions.length];
+  var opp=OPP[0|Math.random()*OPP.length];
+  var op=positions.filter(function(p){return p!==pos;});
+  var oppPos=op[0|Math.random()*op.length]||"BTN";
+  var pH,oH,board,att=0;
+  while(att<20){
+    att++;var d=shuffle(mkDeck());pH=[d[0],d[1]];oH=[d[2],d[3]];
+    var bc=street==="flop"?3:street==="turn"?4:street==="river"?5:0;
+    board=d.slice(4,4+bc);
+    if(bc===0)break;
+    if(bc>=5&&evalH(board).rank>=4)continue;
+    var bf={};board.forEach(function(x){bf[x.rank]=(bf[x.rank]||0)+1;});
+    if(Object.values(bf).some(function(v){return v>=3;}))continue;
+    if(bc===3){var sf={};board.forEach(function(x){sf[x.suit]=(sf[x.suit]||0)+1;});if(Object.values(sf).some(function(v){return v>=3;})&&Math.random()<0.7)continue;}
     break;
   }
-
-  const usedSet = new Set([...playerHand, ...oppHand, ...board].map(c => c.rank+c.suit));
-  const remaining = createDeck().filter(c => !usedSet.has(c.rank+c.suit));
-
-  let preflopSit = "open";
-  if (street === "preflop") {
-    if (pos === "BB" || pos === "SB") preflopSit = Math.random() < 0.5 ? "vs_raise" : "open";
-    else preflopSit = Math.random() < 0.25 ? "vs_raise" : "open";
-  }
-
-  let potSize, betSize, oppAction;
-  if (street === "preflop") {
-    if (preflopSit === "vs_raise") { potSize = 3.5; betSize = 2.5; oppAction = `${opp.emoji} ${oppPos} raises to 2.5bb`; }
-    else { potSize = 1.5; betSize = 0; oppAction = ""; }
-  } else {
-    potSize = 4 + Math.floor(Math.random() * 12);
-    const oppBets = Math.random() < 0.5;
-    if (oppBets) {
-      const sizing = [0.33,0.5,0.66,0.75][Math.floor(Math.random()*4)];
-      betSize = Math.max(2, Math.round(potSize * sizing));
-      potSize += betSize;
-      oppAction = `${opp.emoji} bets ${betSize}bb`;
-    } else { betSize = 0; oppAction = `${opp.emoji} checks`; }
-  }
-
-  return { street, pos, opp, oppPos, playerHand, oppHand, board, remaining, potSize, betSize, oppAction, preflopSit };
+  var used={};pH.concat(oH,board).forEach(function(x){used[x.rank+x.suit]=1;});
+  var rem=mkDeck().filter(function(x){return !used[x.rank+x.suit];});
+  var pfSit="open";
+  if(street==="preflop"){if(pos==="BB"||pos==="SB")pfSit=Math.random()<0.5?"vs_raise":"open";else pfSit=Math.random()<0.25?"vs_raise":"open";}
+  var potSize,betSize;
+  if(street==="preflop"){if(pfSit==="vs_raise"){potSize=3.5;betSize=2.5;}else{potSize=1.5;betSize=0;}}
+  else{potSize=4+(0|Math.random()*12);if(Math.random()<0.5){var sz=[0.33,0.5,0.66,0.75][0|Math.random()*4];betSize=Math.max(2,Math.round(potSize*sz));potSize+=betSize;}else betSize=0;}
+  return{street:street,pos:pos,opp:opp,oppPos:oppPos,playerHand:pH,oppHand:oH,board:board,remaining:rem,potSize:potSize,betSize:betSize,preflopSit:pfSit};
 }
 
 // ═══════════════════════════════════════════════════════════════
-// NARRATIVE BUILDER
+// NARRATIVE
 // ═══════════════════════════════════════════════════════════════
 
-function buildNarrative(best, action, info, opp, street, pot, bet, drawOuts, draws, pos, oppPos, board) {
-  const oppName = opp.name;
-  const isRiver = street === "river";
-  const facingBet = bet > 0;
-  const boardText = board.map(c => cardStr(c)).join(" ");
-  const drawText = draws.map(d => d.desc).join(" and ");
-
-  const oppContext = opp.id === "tight"
-    ? `${oppName} opponents rarely bluff — when they bet, they usually have a real hand.`
-    : opp.id === "aggro"
-    ? `${oppName} opponents bet frequently and bluff often, so their bets are less reliable.`
-    : `${oppName} opponents play standard ranges — their bets usually mean something, but they occasionally bluff.`;
-
-  let narrative = "";
-  if (facingBet) {
-    const potOddsVal = Math.round(bet / (pot + bet) * 100);
-    const needText = `You need ${potOddsVal}% equity to justify a call (pot is ${pot}bb, bet is ${bet}bb).`;
-    if (best === "Fold") {
-      if (drawOuts > 0 && !isRiver) { const eq = Math.round(outsToEquity(drawOuts, street) * 100); narrative = `You have ${info.handDesc} with ${drawText} (${drawOuts} outs ≈ ${eq}% chance to improve). ${needText} The math doesn't quite work — you'd need more outs or better pot odds. ${oppContext} Fold is correct here.`; }
-      else if (isRiver) { narrative = `On the river with ${info.handDesc} on [${boardText}]. No more cards to come. ${oppContext} At this strength, you're not beating enough of their betting range. Fold.`; }
-      else { narrative = `You have ${info.handDesc} — a weak holding with no meaningful draw. ${needText} ${oppContext} Fold and save chips for a better spot.`; }
-    } else if (best === "Call") {
-      if (drawOuts >= 6 && !isRiver) { const eq = Math.round(outsToEquity(drawOuts, street) * 100); narrative = `You have ${info.handDesc} plus ${drawText} — ${drawOuts} outs giving roughly ${eq}% equity. ${needText} Your equity exceeds the price, making this a profitable call. ${oppContext}`; }
-      else if (info.category === "marginal" || info.category === "good") { narrative = `${info.handDesc} is medium-strength on [${boardText}]. Not strong enough to raise for value, but beats enough of the opponent's range to call. ${oppContext}${opp.id==="aggro"?" Against this aggressive opponent, calling is especially profitable.":""}`; }
-      else if (opp.id === "aggro") { narrative = `Normally ${info.handDesc} would be too weak to call, but ${oppName} opponents bluff frequently enough that your hand acts as a bluff-catcher. ${needText}`; }
-      else { narrative = `${info.handDesc} is sufficient to call given the pot odds. ${needText} ${oppContext}`; }
-    } else if (best === "Raise") {
-      narrative = `You have ${info.handDesc} — a strong hand on [${boardText}]. Raising extracts more value from weaker hands. ${oppContext}${opp.id==="aggro"?" An aggressive opponent is likely to call with worse, making a raise especially profitable.":""}`;
-    }
-  } else {
-    if (best === "Bet") {
-      if (draws.length > 0 && !["good","strong","monster"].includes(info.category)) { narrative = `Opponent checked. You have ${info.handDesc} with ${drawText}. Good semi-bluff spot — your bet might take the pot immediately, and if called, you have ${drawOuts} outs to improve. ${oppContext}`; }
-      else { narrative = `Opponent checked. You have ${info.handDesc} on [${boardText}] — strong enough to bet for value. Checking would leave money on the table. ${oppContext}`; }
-    } else if (best === "Check") {
-      narrative = `Opponent checked. You have ${info.handDesc} on [${boardText}]. Not strong enough to bet for value, not a good bluff candidate. ${isRiver?"On the river, c":"C"}hecking lets you see ${isRiver?"a showdown":"the next card"} for free. ${oppContext}`;
-    }
+function buildNarr(best,info,opp,street,pot,bet,board){
+  var on=opp.name,isR=street==="river",fb=bet>0;
+  var bt=board.map(cstr).join(" ");
+  var ad=isR?[]:info.draws;
+  var dt=ad.map(function(d){return d.desc;}).join(" and ");
+  var ao=isR?0:info.drawOuts;
+  var oc=opp.id==="tight"?on+" opponents rarely bluff.":opp.id==="aggro"?on+" opponents bluff often, so their bets are less reliable.":on+" opponents play standard ranges.";
+  var n="";
+  if(fb){
+    var pov=Math.round(bet/(pot+bet)*100);
+    var nt="You need "+pov+"% equity to call (pot "+pot+"BB, bet "+bet+"BB).";
+    if(best==="Fold"){
+      if(ao>0){var eq=Math.round(outsEq(ao,street)*100);n="You have "+info.handDesc+" with "+dt+" ("+ao+" outs, ~"+eq+"% equity). "+nt+" Not enough. "+oc+" Fold.";}
+      else if(isR){n="River: "+info.handDesc+" on ["+bt+"]. No cards to come. "+oc+" Fold.";}
+      else{n=info.handDesc+" with no draw. "+nt+" "+oc+" Fold.";}
+    }else if(best==="Call"){
+      if(ao>=6){var eq2=Math.round(outsEq(ao,street)*100);n=info.handDesc+" plus "+dt+" ("+ao+" outs, ~"+eq2+"% equity). "+nt+" Equity exceeds price. Profitable call. "+oc;}
+      else if(info.category==="marginal"||info.category==="good"){n=info.handDesc+" is medium-strength on ["+bt+"]. Beats enough of their range to call. "+oc;}
+      else if(opp.id==="aggro"){n=info.handDesc+" acts as a bluff-catcher vs "+on+" opponents. "+nt;}
+      else{n=info.handDesc+" is sufficient to call. "+nt+" "+oc;}
+    }else if(best==="Raise"){n=info.handDesc+" is strong on ["+bt+"]. Raise for value. "+oc;}
+  }else{
+    if(best==="Bet"){
+      if(ad.length>0&&["good","strong","monster"].indexOf(info.category)===-1){n="Checked to you. "+info.handDesc+" with "+dt+". Good semi-bluff: take it now or improve with "+ao+" outs. "+oc;}
+      else{n="Checked to you. "+info.handDesc+" on ["+bt+"] is strong enough to bet for value. "+oc;}
+    }else if(best==="Check"){n="Checked to you. "+info.handDesc+" on ["+bt+"]. Too weak to bet for value. "+(isR?"Check and see showdown.":"Check and see next card free.")+" "+oc;}
   }
-  return narrative;
+  return n;
 }
 
 // ═══════════════════════════════════════════════════════════════
 // EVALUATORS
 // ═══════════════════════════════════════════════════════════════
 
-function evaluatePreflop(action, notation, pos, situation) {
-  let best, acceptable, explanation;
-  if (situation === "open") {
-    const range = OPEN[pos];
-    if (!range) return { rating:"green", best:action, acceptable:[action], explanation:"", evDiff:0 };
-    if (range.has(notation)) { best = "Raise"; acceptable = ["Raise"]; explanation = `${notation} is within the ${pos} opening range. This hand has enough equity and playability to raise. Folding gives up a profitable open.`; }
-    else { best = "Fold"; acceptable = ["Fold"]; explanation = `${notation} is outside the ${pos} opening range. There are still ${POS_6.indexOf("BB") - POS_6.indexOf(pos)} players left to act who could have strong hands.`; }
-  } else {
-    const ranges = pos === "BB" ? BB_VS : pos === "SB" ? SB_VS : null;
-    if (ranges) {
-      if (ranges.threebet.has(notation)) { best = "3-Bet"; acceptable = ["3-Bet"]; explanation = `${notation} is premium. Against a raise, 3-betting builds the pot with a strong equity advantage.`; }
-      else if (ranges.call.has(notation)) { best = "Call"; acceptable = ["Call"]; explanation = `${notation} is strong enough to defend from ${pos}. Not premium enough to 3-bet — it plays better in smaller pots.`; }
-      else { best = "Fold"; acceptable = ["Fold"]; explanation = `${notation} doesn't have enough equity to defend from ${pos} against a raise.`; }
-    } else {
-      if (["AA","KK","QQ","JJ","AKs","AKo"].includes(notation)) { best = "3-Bet"; acceptable = ["3-Bet","Call"]; explanation = `${notation} is premium. 3-betting preferred to build the pot and take initiative.`; }
-      else if (OPEN[pos]?.has(notation)) { best = "Call"; acceptable = ["Call","Fold"]; explanation = `${notation} is borderline against a raise from ${pos}. Calling is acceptable, folding isn't a mistake.`; }
-      else { best = "Fold"; acceptable = ["Fold"]; explanation = `${notation} is too weak against a raise from ${pos}.`; }
+function evalPre(action,nota,pos,sit){
+  var best,acc,expl;
+  var pl=P6.indexOf("BB")-P6.indexOf(pos);
+  if(sit==="open"){
+    var range=OPEN[pos];if(!range)return{rating:"green",best:action,acceptable:[action],explanation:"",evDiff:0};
+    if(range.has(nota)){best="Raise";acc=["Raise"];expl=nota+" is in "+pos+" opening range ("+pl+" players behind). Open-raise for value and initiative. Folding forfeits a +EV spot.";}
+    else{best="Fold";acc=["Fold"];expl=nota+" is outside "+pos+" opening range. With "+pl+" players behind, risk is too high.";}
+  }else{
+    var ranges=pos==="BB"?BB_VS:pos==="SB"?SB_VS:null;
+    if(ranges){
+      if(ranges.threebet.has(nota)){best="3-Bet";acc=["3-Bet"];expl=nota+" is premium enough to 3-bet from "+pos+". Build a bigger pot with your equity advantage.";}
+      else if(ranges.call.has(nota)){best="Call";acc=["Call"];expl=nota+" defends from "+pos+" but isn't premium enough to 3-bet. Call to see a flop.";}
+      else{best="Fold";acc=["Fold"];expl=nota+" can't profitably defend from "+pos+" vs a raise.";}
+    }else{
+      if(["AA","KK","QQ","JJ","AKs","AKo"].indexOf(nota)!==-1){best="3-Bet";acc=["3-Bet","Call"];expl=nota+" is premium. 3-bet to build the pot.";}
+      else if(OPEN[pos]&&OPEN[pos].has(nota)){best="Call";acc=["Call","Fold"];expl=nota+" is borderline vs a raise from "+pos+". Calling is fine.";}
+      else{best="Fold";acc=["Fold"];expl=nota+" is too weak vs a raise from "+pos+".";}
     }
   }
-  const rating = action === best ? "green" : acceptable.includes(action) ? "yellow" : "red";
-  const evDiff = rating === "red" ? (best==="Fold"&&action!=="Fold" ? -2.5 : -1.5) : rating === "yellow" ? -0.3 : 0;
-  return { rating, best, acceptable, explanation, evDiff };
+  var rating=action===best?"green":acc.indexOf(action)!==-1?"yellow":"red";
+  var evDiff=rating==="red"?(best==="Fold"&&action!=="Fold"?-2.5:-1.5):rating==="yellow"?-0.3:0;
+  return{rating:rating,best:best,acceptable:acc,explanation:expl,evDiff:evDiff};
 }
 
-function evaluatePostflop(action, hole, board, pot, bet, opp, street, remaining) {
-  const info = classifyHand(hole, board);
-  const drawOuts = info.drawOuts;
-  const equity = outsToEquity(drawOuts, street);
-  const oddsNeeded = potOdds(pot, bet);
-  const isRiver = street === "river";
-  let best, acceptable;
-
-  if (bet > 0) {
-    if (info.strength >= 0.55) { best = "Raise"; acceptable = ["Raise","Call"]; }
-    else if (info.strength >= 0.30) { best = "Call"; acceptable = ["Call"]; }
-    else if (!isRiver && drawOuts >= 8 && (info.strength + equity * 0.6) >= oddsNeeded) { best = "Call"; acceptable = ["Call"]; }
-    else if (!isRiver && drawOuts >= 4 && (info.strength + equity * 0.6) >= oddsNeeded) { best = "Call"; acceptable = ["Call","Fold"]; }
-    else if (opp.id === "aggro" && isRiver && info.strength >= 0.18) { best = "Call"; acceptable = ["Call","Fold"]; }
-    else { best = "Fold"; acceptable = ["Fold"]; }
-  } else {
-    if (info.strength >= 0.40) { best = "Bet"; acceptable = ["Bet","Check"]; }
-    else if (!isRiver && info.draws.length > 0 && drawOuts >= 6) { best = "Bet"; acceptable = ["Bet","Check"]; }
-    else { best = "Check"; acceptable = ["Check"]; }
+function evalPost(action,hole,board,pot,bet,opp,street){
+  var info=classify(hole,board);var dO=info.drawOuts;
+  var eq=outsEq(dO,street);var on=potOdds(pot,bet);
+  var isR=street==="river";var best,acc;
+  if(bet>0){
+    if(info.strength>=0.55){best="Raise";acc=["Raise","Call"];}
+    else if(info.strength>=0.30){best="Call";acc=["Call"];}
+    else if(!isR&&dO>=8&&(info.strength+eq*0.6)>=on){best="Call";acc=["Call"];}
+    else if(!isR&&dO>=4&&(info.strength+eq*0.6)>=on){best="Call";acc=["Call","Fold"];}
+    else if(opp.id==="aggro"&&isR&&info.strength>=0.18){best="Call";acc=["Call","Fold"];}
+    else{best="Fold";acc=["Fold"];}
+  }else{
+    if(info.strength>=0.40){best="Bet";acc=["Bet","Check"];}
+    else if(!isR&&info.draws.length>0&&dO>=6){best="Bet";acc=["Bet","Check"];}
+    else{best="Check";acc=["Check"];}
   }
-
-  const rating = action === best ? "green" : acceptable.includes(action) ? "yellow" : "red";
-  let evDiff = 0;
-  if (rating === "red") {
-    if (best === "Fold" && action !== "Fold") evDiff = -(bet || Math.round(pot * 0.5));
-    else if (action === "Fold" && best !== "Fold") evDiff = -Math.round(pot * 0.15);
-    else evDiff = -Math.round(pot * 0.1);
-  } else if (rating === "yellow") evDiff = -Math.round(pot * 0.03);
-
-  const explanation = buildNarrative(best, action, info, opp, street, pot, bet, drawOuts, info.draws, "", "", board);
-  return { rating, best, acceptable, explanation, evDiff, info };
+  var rating=action===best?"green":acc.indexOf(action)!==-1?"yellow":"red";
+  var evDiff=0;
+  if(rating==="red"){if(best==="Fold"&&action!=="Fold")evDiff=-(bet||Math.round(pot*0.5));else if(action==="Fold"&&best!=="Fold")evDiff=-Math.round(pot*0.15);else evDiff=-Math.round(pot*0.1);}
+  else if(rating==="yellow")evDiff=-Math.round(pot*0.03);
+  var explanation=buildNarr(best,info,opp,street,pot,bet,board);
+  return{rating:rating,best:best,acceptable:acc,explanation:explanation,evDiff:evDiff,info:info};
 }
 
 // ═══════════════════════════════════════════════════════════════
 // STORAGE
 // ═══════════════════════════════════════════════════════════════
 
-const SK = "poker-trainer-data";
-function loadLocal() { try { const r = localStorage.getItem(SK); return r ? JSON.parse(r) : null; } catch { return null; } }
-function saveLocal(d) { try { localStorage.setItem(SK, JSON.stringify(d)); } catch {} }
+var SK="poker-trainer-data";
+function loadLocal(){try{var r=localStorage.getItem(SK);return r?JSON.parse(r):null;}catch(e){return null;}}
+function saveLocal(d){try{if(d)localStorage.setItem(SK,JSON.stringify(d));else localStorage.removeItem(SK);}catch(e){}}
 
 // ═══════════════════════════════════════════════════════════════
-// NARRATIVE RENDERER — highlights key terms in gold
+// SMALL COMPONENTS
 // ═══════════════════════════════════════════════════════════════
 
-function NarrativeText({ text }) {
-  const patterns = [
-    /(\d+\s*outs?\b)/gi,
-    /(\d+%\s*(?:equity|chance))/gi,
-    /(pot is \d+[\d.]*bb|bet is \d+[\d.]*bb|\d+%\s*equity)/gi,
-    /(flush draw|straight draw|open-ended|gutshot|OESD)/gi,
-    /(overpair|top pair|two pair|three of a kind|full house|flush|straight|bottom pair|middle pair|underpair)/gi,
-    /(semi-bluff|bluff-catcher|profitable call|value)/gi,
-    /\b(Fold|Call|Raise|3-Bet|Check|Bet)\b/g,
+function Chip(props){
+  var s=props.size||T.chip;
+  return <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:s,height:s,borderRadius:"50%",background:T.gold,color:"#fff",fontSize:s*0.36,fontWeight:800,lineHeight:1,verticalAlign:"middle",border:"2px solid "+T.goldDark,flexShrink:0}}>BB</span>;
+}
+
+function BV(props){
+  return <span style={{display:"inline-flex",alignItems:"center",gap:4,verticalAlign:"middle"}}>
+    <span style={{fontSize:props.fs||15,fontWeight:T.weight,color:props.color||T.goldDark,fontVariantNumeric:"tabular-nums",fontFamily:T.font}}>{typeof props.value==="number"?props.value.toFixed(1):props.value}</span>
+    <Chip size={props.cs||T.chipInline}/>
+  </span>;
+}
+
+function PB(props){return <span style={{color:T.pos[props.pos]||T.gold,fontWeight:T.weight}}>{props.pos}</span>;}
+
+// ═══════════════════════════════════════════════════════════════
+// NARRATIVE TEXT RENDERER
+// ═══════════════════════════════════════════════════════════════
+
+function NT(props){
+  var text=props.text||"";
+  var pats=[
+    {re:/\b([AKQJT98765432]{2}[so])\b/g,t:"hand"},
+    {re:/\b([AKQJT98765432])\1\b/g,t:"hand"},
+    {re:/\b(UTG|MP|CO|BTN|SB|BB)\b/g,t:"pos"},
+    {re:/(\d+\s*outs?\b)/gi,t:"hl"},
+    {re:/(\d+%\s*equity)/gi,t:"hl"},
+    {re:/(flush draw|straight draw|open-ended|gutshot|OESD)/gi,t:"hl"},
+    {re:/(overpair|top pair|two pair|three of a kind|full house|flush|straight|bottom pair|middle pair|underpair|ace high|overcards|pocket pair|high card)/gi,t:"hl"},
+    {re:/(semi-bluff|bluff-catcher|profitable|\+EV)/gi,t:"hl"},
+    {re:/\b(Fold|Call|Raise|3-Bet|Check|Bet)\b/g,t:"hl"},
   ];
-
-  let parts = [{ text, hl: false }];
-  for (const re of patterns) {
-    const next = [];
-    for (const p of parts) {
-      if (p.hl) { next.push(p); continue; }
-      let last = 0;
-      for (const m of [...p.text.matchAll(re)]) {
-        if (m.index > last) next.push({ text: p.text.slice(last, m.index), hl: false });
-        next.push({ text: m[0], hl: true });
-        last = m.index + m[0].length;
+  var parts=[{text:text,t:"plain"}];
+  for(var pi=0;pi<pats.length;pi++){
+    var pat=pats[pi];var next=[];
+    for(var j=0;j<parts.length;j++){
+      var p=parts[j];
+      if(p.t!=="plain"){next.push(p);continue;}
+      var last=0;var rc=new RegExp(pat.re.source,pat.re.flags);
+      var match;while((match=rc.exec(p.text))!==null){
+        if(match.index>last)next.push({text:p.text.slice(last,match.index),t:"plain"});
+        next.push({text:match[0],t:pat.t});last=match.index+match[0].length;
       }
-      if (last < p.text.length) next.push({ text: p.text.slice(last), hl: false });
+      if(last<p.text.length)next.push({text:p.text.slice(last),t:"plain"});
     }
-    parts = next;
+    parts=next;
   }
-
-  return <>{parts.map((p, i) => p.hl
-    ? <span key={i} style={{ color: P.gold, fontWeight: 700 }}>{p.text}</span>
-    : <span key={i}>{p.text}</span>
-  )}</>;
+  return <>{parts.map(function(p,i){
+    if(p.t==="pos")return <PB key={i} pos={p.text}/>;
+    if(p.t==="hand")return <span key={i} style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontWeight:T.weight,color:T.text,border:"1px solid "+T.border}}>{p.text}</span>;
+    if(p.t==="hl")return <span key={i} style={{color:T.goldDark,fontWeight:T.weight}}>{p.text}</span>;
+    return <span key={i}>{p.text}</span>;
+  })}</>;
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MAIN COMPONENT
+// MAIN
 // ═══════════════════════════════════════════════════════════════
 
-export default function PokerTrainer() {
-  const [screen, setScreen] = useState("menu");
-  const [tableSize, setTableSize] = useState(6);
-  const [scenario, setScenario] = useState(null);
-  const [phase, setPhase] = useState("action");
-  const [feedback, setFeedback] = useState(null);
-  const [log, setLog] = useState([]);
-  const [stack, setStack] = useState(100);
-  const [handNum, setHandNum] = useState(0);
-  const [copied, setCopied] = useState(false);
-  const [lifetime, setLifetime] = useState(() => loadLocal() || { totalHands:0, greens:0, yellows:0, reds:0, totalEv:0, sessions:0 });
+export default function PokerTrainer(){
+  var [screen,setScreen]=useState("menu");
+  var [tableSize,setTableSize]=useState(6);
+  var [scenario,setSc]=useState(null);
+  var [phase,setPhase]=useState("action");
+  var [feedback,setFB]=useState(null);
+  var [log,setLog]=useState([]);
+  var [stack,setStack]=useState(100);
+  var [handNum,setHN]=useState(0);
+  var [copied,setCopied]=useState(false);
+  var [csvCopied,setCsvCopied]=useState(false);
+  var [lifetime,setLT]=useState(function(){return loadLocal()||{totalHands:0,greens:0,yellows:0,reds:0,totalEv:0,sessions:0};});
+  var [confirmReset,setConfirmReset]=useState(false);
+  var fileRef=useRef(null);
+  var positions=tableSize===6?P6:P3;
+  var F={fontFamily:T.font,fontWeight:T.weight};
 
-  const positions = tableSize === 6 ? POS_6 : POS_3;
+  var persist=useCallback(function(sl){
+    if(!sl.length)return;
+    setLT(function(p){var m={totalHands:p.totalHands+sl.length,greens:p.greens+sl.filter(function(e){return e.rating==="green";}).length,yellows:p.yellows+sl.filter(function(e){return e.rating==="yellow";}).length,reds:p.reds+sl.filter(function(e){return e.rating==="red";}).length,totalEv:p.totalEv+sl.reduce(function(s,e){return s+e.ev;},0),sessions:p.sessions+1};saveLocal(m);return m;});
+  },[]);
+  var start=useCallback(function(){if(log.length>0)persist(log);setLog([]);setStack(100);setHN(1);setSc(genScenario(positions));setPhase("action");setFB(null);setScreen("game");},[positions,log,persist]);
+  var goNext=useCallback(function(){setHN(function(h){return h+1;});setSc(genScenario(positions));setPhase("action");setFB(null);},[positions]);
 
-  const persistSession = useCallback((sessionLog) => {
-    if (sessionLog.length === 0) return;
-    setLifetime(prev => {
-      const m = {
-        totalHands: prev.totalHands + sessionLog.length,
-        greens: prev.greens + sessionLog.filter(e=>e.rating==="green").length,
-        yellows: prev.yellows + sessionLog.filter(e=>e.rating==="yellow").length,
-        reds: prev.reds + sessionLog.filter(e=>e.rating==="red").length,
-        totalEv: prev.totalEv + sessionLog.reduce((s,e)=>s+e.ev, 0),
-        sessions: prev.sessions + 1,
-      };
-      saveLocal(m);
-      return m;
-    });
-  }, []);
+  var act=useCallback(function(action){
+    if(!scenario)return;
+    var n=hn(scenario.playerHand[0],scenario.playerHand[1]);
+    var ev;
+    if(scenario.street==="preflop")ev=evalPre(action,n,scenario.pos,scenario.preflopSit);
+    else ev=evalPost(action,scenario.playerHand,scenario.board,scenario.potSize,scenario.betSize,scenario.opp,scenario.street);
+    setFB(ev);setPhase("feedback");setStack(function(s){return s+ev.evDiff;});
+    setLog(function(p){return p.concat([{hand:handNum,pos:scenario.pos,cards:n,board:scenario.board.length>0?scenario.board.map(cstr).join(" "):"--",pot:scenario.potSize.toFixed(1),bet:scenario.betSize>0?scenario.betSize.toFixed(1):"--",street:SN[scenario.street],situation:scenario.street==="preflop"?scenario.preflopSit:(scenario.betSize>0?"vs bet":"checked to"),opp:scenario.opp.name,action:action,correct:ev.best,rating:ev.rating,ev:ev.evDiff}]);});
+  },[scenario,handNum]);
 
-  const startSession = useCallback(() => {
-    if (log.length > 0) persistSession(log);
-    setLog([]); setStack(100); setHandNum(1);
-    setScenario(generateScenario(positions));
-    setPhase("action"); setFeedback(null); setScreen("game");
-  }, [positions, log, persistSession]);
-
-  const nextScenario = useCallback(() => {
-    setHandNum(h => h + 1);
-    setScenario(generateScenario(positions));
-    setPhase("action"); setFeedback(null);
-  }, [positions]);
-
-  const handleAction = useCallback((action) => {
-    if (!scenario) return;
-    let ev;
-    if (scenario.street === "preflop") {
-      const n = handNotation(scenario.playerHand[0], scenario.playerHand[1]);
-      ev = evaluatePreflop(action, n, scenario.pos, scenario.preflopSit);
-    } else {
-      ev = evaluatePostflop(action, scenario.playerHand, scenario.board, scenario.potSize, scenario.betSize, scenario.opp, scenario.street, scenario.remaining);
-    }
-    setFeedback(ev); setPhase("feedback"); setStack(s => s + ev.evDiff);
-    const n = handNotation(scenario.playerHand[0], scenario.playerHand[1]);
-    setLog(prev => [...prev, {
-      hand:handNum, pos:scenario.pos, cards:n,
-      board:scenario.board.length>0?scenario.board.map(cardStr).join(" "):"—",
-      pot:scenario.potSize.toFixed(1), bet:scenario.betSize>0?scenario.betSize.toFixed(1):"—",
-      street:STREET_NAMES[scenario.street],
-      situation:scenario.street==="preflop"?scenario.preflopSit:(scenario.betSize>0?"vs bet":"checked to"),
-      opp:scenario.opp.name, action, correct:ev.best, rating:ev.rating, ev:ev.evDiff,
-    }]);
-  }, [scenario, handNum]);
-
-  const getActions = () => {
-    if (!scenario) return [];
-    if (scenario.street === "preflop") return scenario.preflopSit === "vs_raise" ? ["Fold","Call","3-Bet"] : ["Fold","Raise"];
-    return scenario.betSize > 0 ? ["Fold","Call","Raise"] : ["Check","Bet"];
+  var getActs=function(){
+    if(!scenario)return[];
+    if(scenario.street==="preflop")return scenario.preflopSit==="vs_raise"?["Fold","Call","3-Bet"]:["Fold","Raise"];
+    return scenario.betSize>0?["Fold","Call","Raise"]:["Check","Bet"];
   };
 
-  const getStats = useCallback(() => {
-    if (log.length === 0) return null;
-    const total = log.length, greens = log.filter(e=>e.rating==="green").length, yellows = log.filter(e=>e.rating==="yellow").length, reds = log.filter(e=>e.rating==="red").length;
-    const totalEv = log.reduce((s,e)=>s+e.ev, 0);
-    const byStreet={}, byPos={}, bySit={}, handMistakes={}, patterns={};
-    for (const e of log) {
+  var getStats=useCallback(function(){
+    if(!log.length)return null;
+    var total=log.length,greens=0,yellows=0,reds=0,totalEv=0;
+    var byStreet={},byPos={},patterns={};
+    for(var i=0;i<log.length;i++){
+      var e=log[i];totalEv+=e.ev;
+      if(e.rating==="green")greens++;else if(e.rating==="yellow")yellows++;else reds++;
       if(!byStreet[e.street])byStreet[e.street]={total:0,correct:0,mistakes:0,ev:0};
-      byStreet[e.street].total++; if(e.rating==="green")byStreet[e.street].correct++; if(e.rating==="red")byStreet[e.street].mistakes++; byStreet[e.street].ev+=e.ev;
-      if(!byPos[e.pos])byPos[e.pos]={total:0,mistakes:0}; byPos[e.pos].total++; if(e.rating==="red")byPos[e.pos].mistakes++;
-      const sk=`${e.street} ${e.situation}`; if(!bySit[sk])bySit[sk]={total:0,mistakes:0}; bySit[sk].total++; if(e.rating==="red")bySit[sk].mistakes++;
-      if(e.rating==="red"){handMistakes[e.cards]=(handMistakes[e.cards]||0)+1; const p=`Should ${e.correct}, chose ${e.action}`; patterns[p]=(patterns[p]||0)+1;}
+      byStreet[e.street].total++;if(e.rating==="green")byStreet[e.street].correct++;if(e.rating==="red")byStreet[e.street].mistakes++;byStreet[e.street].ev+=e.ev;
+      if(!byPos[e.pos])byPos[e.pos]={total:0,mistakes:0};byPos[e.pos].total++;if(e.rating==="red")byPos[e.pos].mistakes++;
+      if(e.rating==="red"){var pat="Should "+e.correct+", chose "+e.action;patterns[pat]=(patterns[pat]||0)+1;}
     }
-    return { total,greens,yellows,reds,totalEv,byStreet,byPos,bySit,handMistakes,patterns };
-  }, [log]);
+    return{total:total,greens:greens,yellows:yellows,reds:reds,totalEv:totalEv,byStreet:byStreet,byPos:byPos,patterns:patterns};
+  },[log]);
 
-  const exportSession = useCallback(() => {
-    if (log.length === 0) return;
-    let md = "| # | Pos | Hand | Board | Pot | Bet | Street | Sit | Opp | Action | Correct | Grade | EV± |\n|---|-----|------|-------|-----|-----|--------|-----|-----|--------|---------|-------|-----|\n";
-    for (const e of log) {
-      const icon = e.rating==="green"?"🟢":e.rating==="yellow"?"🟡":"🔴";
-      md += `| ${e.hand} | ${e.pos} | ${e.cards} | ${e.board} | ${e.pot} | ${e.bet} | ${e.street} | ${e.situation} | ${e.opp} | ${e.action} | ${e.correct} | ${icon} | ${e.ev>0?"+":""}${e.ev.toFixed(1)} |\n`;
+  // CSV export via clipboard (Blob not available in sandbox)
+  var exportCSV=useCallback(function(){
+    if(!log.length)return;
+    var lines=["hand,pos,cards,board,pot,bet,street,situation,opp,action,correct,rating,ev"];
+    for(var i=0;i<log.length;i++){var e=log[i];lines.push([e.hand,e.pos,e.cards,'"'+e.board+'"',e.pot,e.bet,e.street,e.situation,e.opp,e.action,e.correct,e.rating,e.ev.toFixed(1)].join(","));}
+    navigator.clipboard.writeText(lines.join("\n")).catch(function(){});
+    setCsvCopied(true);setTimeout(function(){setCsvCopied(false);},2000);
+  },[log]);
+
+  var importCSV=useCallback(function(ev){
+    var file=ev.target.files&&ev.target.files[0];if(!file)return;
+    var reader=new FileReader();
+    reader.onload=function(e){
+      var text=e.target&&e.target.result;if(!text)return;
+      var lines=text.split("\n").slice(1).filter(function(l){return l.trim();});
+      var imported=[];
+      for(var i=0;i<lines.length;i++){
+        var m=lines[i].match(/^(\d+),(\w+),(\w+),"?([^"]*)"?,([^,]+),([^,]+),(\w+),([^,]+),(\w+),([^,]+),([^,]+),(\w+),(.+)$/);
+        if(m)imported.push({hand:+m[1],pos:m[2],cards:m[3],board:m[4],pot:m[5],bet:m[6],street:m[7],situation:m[8],opp:m[9],action:m[10],correct:m[11],rating:m[12],ev:+m[13]});
+      }
+      if(imported.length>0){setLog(function(p){return p.concat(imported);});alert("Imported "+imported.length+" hands");}
+    };
+    reader.readAsText(file);ev.target.value="";
+  },[]);
+
+  var resetStats=useCallback(function(){
+    setLT({totalHands:0,greens:0,yellows:0,reds:0,totalEv:0,sessions:0});
+    saveLocal(null);setLog([]);setStack(100);setHN(0);setConfirmReset(false);
+  },[]);
+
+  var exportMD=useCallback(function(){
+    if(!log.length)return;
+    var hd="| # | Pos | Hand | Board | Action | Correct | Grade | EV |\n|---|-----|------|-------|--------|---------|-------|----|\n";
+    for(var i=0;i<log.length;i++){var e=log[i];var ic=e.rating==="green"?"OK":e.rating==="yellow"?"~":"X";hd+="| "+e.hand+" | "+e.pos+" | "+e.cards+" | "+e.board+" | "+e.action+" | "+e.correct+" | "+ic+" | "+(e.ev>0?"+":"")+e.ev.toFixed(1)+" |\n";}
+    navigator.clipboard.writeText(hd).catch(function(){});setCopied(true);setTimeout(function(){setCopied(false);},2000);
+  },[log]);
+
+  // Card component
+  function CCard(props){
+    var card=props.card,isBoard=props.board;
+    var col=SC[card.suit];var rank=RD[card.rank]||card.rank;
+    if(isBoard){
+      return <div style={{width:T.bcW,height:T.bcH,borderRadius:T.bcR,background:T.cream,border:"1.5px solid "+T.creamBorder,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:T.font,boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
+        <span style={{fontSize:T.bcRank,fontWeight:800,color:col,lineHeight:1}}>{rank}</span>
+        <span style={{fontSize:T.bcSuit,color:col,lineHeight:1,marginTop:2}}>{card.suit}</span>
+      </div>;
     }
-    navigator.clipboard.writeText(md).catch(()=>{});
-    setCopied(true); setTimeout(()=>setCopied(false),2000);
-  }, [log]);
-
-  // ─── CARD ──────────────────────────
-  const Card = ({ card, small, board }) => {
-    const isRed = card.suit === "♥" || card.suit === "♦";
-    const col = isRed ? P.red : P.navy;
-    const rank = RANK_DISPLAY[card.rank] || card.rank;
-
-    if (board) {
-      // Board cards: compact, on navy background
-      return (
-        <div style={{
-          width: 52, height: 70, borderRadius: 5,
-          background: P.cream, border: "1.5px solid #d0c8b8",
-          display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-          fontFamily:"Helvetica, Arial, sans-serif",
-        }}>
-          <span style={{ fontSize:24, fontWeight:800, color:col, lineHeight:1 }}>{rank}</span>
-          <span style={{ fontSize:15, color:col, lineHeight:1, marginTop:2 }}>{card.suit}</span>
-        </div>
-      );
-    }
-
-    // Player cards: large, centered rank + suit only
-    const w = small ? 80 : 110;
-    const h = small ? 116 : 156;
-    return (
-      <div style={{
-        width:w, height:h, borderRadius:8, position:"relative",
-        background: P.cream,
-        border: "2px solid #d0c8b8",
-        fontFamily:"Helvetica, Arial, sans-serif",
-        boxShadow:"0 2px 8px rgba(0,0,0,0.08)",
-        display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-        gap: 2,
-      }}>
-        <div style={{
-          fontSize: small?44:64, fontWeight:800, color:col, lineHeight:1,
-        }}>{rank}</div>
-        <div style={{
-          fontSize: small?22:30, color:col, lineHeight:1,
-        }}>{card.suit}</div>
-      </div>
-    );
-  };
-
-  const FaceDown = () => (
-    <div style={{
-      width:44, height:60, borderRadius:4,
-      background: `repeating-linear-gradient(45deg, ${P.navy}, ${P.navy} 2px, ${P.navyLight} 2px, ${P.navyLight} 4px)`,
-      border:`1.5px solid ${P.navyLight}`,
-    }}/>
-  );
-
-  const font = "Helvetica, Arial, sans-serif";
-
-  // ═════════════ MENU ═════════════
-  if (screen === "menu") {
-    return (
-      <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:P.bg, fontFamily:font, padding:20 }}>
-        <div style={{ maxWidth:360, width:"100%", textAlign:"center" }}>
-          <div style={{ fontSize:11, letterSpacing:"0.25em", color:P.textLight, textTransform:"uppercase", marginBottom:6 }}>Poker</div>
-          <h1 style={{ fontSize:32, fontWeight:700, margin:"0 0 4px", color:P.text, letterSpacing:"-0.01em" }}>Trainer</h1>
-          <div style={{ width:40, height:2, background:P.gold, margin:"10px auto 20px" }}/>
-
-          <div style={{ display:"flex", gap:10, justifyContent:"center", marginBottom:24 }}>
-            {[3,6].map(n => (
-              <button key={n} onClick={() => setTableSize(n)} style={{
-                padding:"10px 26px", borderRadius:20, cursor:"pointer",
-                border: tableSize===n ? `2px solid ${P.gold}` : `2px solid #c8c0b0`,
-                background: tableSize===n ? `${P.gold}18` : "transparent",
-                color: tableSize===n ? P.goldDark : P.textMid,
-                fontWeight:600, fontSize:14, fontFamily:font,
-              }}>{n}-max</button>
-            ))}
-          </div>
-
-          <button onClick={startSession} style={{
-            padding:"14px 48px", borderRadius:24, border:"none", cursor:"pointer",
-            background: P.gold, color:P.white, fontWeight:700, fontSize:15,
-            fontFamily:font, letterSpacing:"0.02em",
-          }}>DEAL</button>
-
-          {log.length > 0 && (
-            <button onClick={() => { persistSession(log); setScreen("stats"); }} style={{
-              display:"block", margin:"14px auto 0", padding:"8px 20px", borderRadius:16,
-              border:`1.5px solid #c8c0b0`, background:"transparent",
-              color:P.textMid, fontSize:12, cursor:"pointer", fontFamily:font,
-            }}>Session Stats ({log.length}) →</button>
-          )}
-
-          {lifetime.totalHands > 0 && (
-            <div style={{ marginTop:24, fontSize:12, color:P.textLight }}>
-              {lifetime.totalHands} hands · {Math.round(lifetime.greens/lifetime.totalHands*100)}% accuracy · {lifetime.sessions} sessions
-            </div>
-          )}
-        </div>
-      </div>
-    );
+    return <div style={{width:T.cardW,height:T.cardH,borderRadius:T.cardR,background:T.cream,border:"2px solid "+T.creamBorder,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:T.font,boxShadow:"0 4px 16px rgba(0,0,0,0.1)",gap:2}}>
+      <span style={{fontSize:rank.length>1?T.cardRank10:T.cardRank,fontWeight:800,color:col,lineHeight:1}}>{rank}</span>
+      <span style={{fontSize:T.cardSuit,color:col,lineHeight:1}}>{card.suit}</span>
+    </div>;
   }
 
-  // ═════════════ STATS ═════════════
-  if (screen === "stats") {
-    const stats = getStats();
-    const panel = { background:P.cream, borderRadius:10, padding:16, marginBottom:10, border:`1px solid #d8d0c0` };
-    const lbl = { fontSize:10, fontWeight:600, color:P.textLight, textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:8 };
-    return (
-      <div style={{ minHeight:"100vh", background:P.bg, fontFamily:font, padding:16, display:"flex", flexDirection:"column", alignItems:"center" }}>
-        <div style={{ width:"100%", maxWidth:480 }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-            <button onClick={() => setScreen("game")} style={{ background:"none", border:"none", color:P.textMid, fontSize:13, cursor:"pointer", fontFamily:font }}>← Back</button>
-            <span style={{ fontSize:15, fontWeight:700, color:P.text }}>Session Report</span>
-            <div style={{width:40}}/>
-          </div>
-          {!stats ? <p style={{color:P.textMid,textAlign:"center"}}>No data yet.</p> : (<>
-            <div style={panel}>
-              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:12 }}>
-                {[
-                  {l:"Hands",v:stats.total,c:P.text},
-                  {l:"Accuracy",v:`${Math.round(stats.greens/stats.total*100)}%`,c:P.green},
-                  {l:"EV",v:`${stats.totalEv>=0?"+":""}${stats.totalEv.toFixed(1)}`,c:stats.totalEv>=0?P.green:P.red},
-                  {l:"Stack",v:stack.toFixed(1),c:stack>=100?P.green:P.red},
-                ].map((d,i)=>(<div key={i} style={{textAlign:"center"}}><div style={{fontSize:22,fontWeight:700,color:d.c}}>{d.v}</div><div style={{...lbl,margin:0}}>{d.l}</div></div>))}
-              </div>
-              <div style={{ display:"flex", gap:2, height:3, borderRadius:2, overflow:"hidden", background:"#e0d8c8" }}>
-                <div style={{width:`${stats.greens/stats.total*100}%`,background:P.green}}/>
-                <div style={{width:`${stats.yellows/stats.total*100}%`,background:P.gold}}/>
-                <div style={{width:`${stats.reds/stats.total*100}%`,background:P.red}}/>
-              </div>
-            </div>
-
-            <div style={panel}><h3 style={lbl}>By Street</h3>
-              {Object.entries(stats.byStreet).map(([st,d])=>(<div key={st} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #e8e0d4",fontSize:13}}><span style={{color:P.text}}>{st}</span><div style={{display:"flex",gap:14}}><span style={{color:P.textLight}}>{d.total}</span>{d.mistakes>0&&<span style={{color:P.red}}>{d.mistakes} err</span>}<span style={{color:d.ev>=0?P.green:P.red,minWidth:45,textAlign:"right"}}>{d.ev>=0?"+":""}{d.ev.toFixed(1)}</span></div></div>))}
-            </div>
-
-            {Object.values(stats.byPos).some(d=>d.mistakes>0) && (
-              <div style={panel}><h3 style={lbl}>Weak Positions</h3>
-                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                  {Object.entries(stats.byPos).filter(([,d])=>d.mistakes>0).sort((a,b)=>b[1].mistakes-a[1].mistakes).map(([p,d])=>(
-                    <span key={p} style={{background:`${P.red}16`,color:P.red,padding:"4px 10px",borderRadius:12,fontSize:12,fontWeight:600}}>{p} {d.mistakes}×</span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {Object.keys(stats.patterns).length > 0 && (
-              <div style={panel}><h3 style={lbl}>Error Patterns</h3>
-                {Object.entries(stats.patterns).sort((a,b)=>b[1]-a[1]).map(([pat,cnt])=>(
-                  <div key={pat} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #e8e0d4",fontSize:13}}><span style={{color:P.text}}>{pat}</span><span style={{color:P.red,fontWeight:700}}>{cnt}×</span></div>
-                ))}
-              </div>
-            )}
-
-            <div style={{display:"flex",gap:8}}>
-              <button onClick={exportSession} style={{flex:1,padding:12,borderRadius:20,border:`1.5px solid #c8c0b0`,cursor:"pointer",background:copied?`${P.green}16`:P.cream,color:copied?P.green:P.text,fontWeight:600,fontSize:13,fontFamily:font}}>{copied?"✓ Copied":"📋 Copy"}</button>
-              <button onClick={()=>{setScreen("game");nextScenario();}} style={{flex:1,padding:12,borderRadius:20,border:"none",cursor:"pointer",background:P.gold,color:P.white,fontWeight:700,fontSize:13,fontFamily:font}}>Continue →</button>
-            </div>
-          </>)}
+  // ═══════ MENU ═══════
+  if(screen==="menu"){
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:T.bg,...F,padding:20}}>
+      <div style={{maxWidth:T.maxW,width:"100%",textAlign:"center"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:8}}>
+          <div style={{width:40,height:1,background:T.border}}/><div style={{width:5,height:5,background:T.gold,transform:"rotate(45deg)"}}/><div style={{width:40,height:1,background:T.border}}/>
         </div>
+        <div style={{fontSize:11,letterSpacing:"0.3em",color:T.textDim,textTransform:"uppercase",marginBottom:4}}>Poker</div>
+        <h1 style={{fontSize:36,fontWeight:T.weight,margin:"0 0 4px",color:T.text}}>TRAINER</h1>
+        <div style={{width:50,height:2,background:T.gold,margin:"12px auto 28px"}}/>
+        <div style={{display:"flex",gap:10,justifyContent:"center",marginBottom:28}}>
+          {[3,6].map(function(n){return <button key={n} onClick={function(){setTableSize(n);}} style={{padding:"10px 28px",borderRadius:20,cursor:"pointer",border:tableSize===n?"2px solid "+T.gold:"2px solid "+T.border,background:tableSize===n?T.gold+"18":"transparent",color:tableSize===n?T.goldDark:T.textMid,...F,fontSize:14}}>{n}-max</button>;})}
+        </div>
+        <button onClick={start} style={{padding:"16px 56px",borderRadius:24,border:"none",cursor:"pointer",background:T.gold,color:"#fff",...F,fontSize:16}}>DEAL</button>
+        {log.length>0 && <button onClick={function(){persist(log);setScreen("stats");}} style={{display:"block",margin:"16px auto 0",padding:"8px 22px",borderRadius:16,border:"1.5px solid "+T.border,background:"transparent",color:T.textMid,...F,fontSize:12,cursor:"pointer"}}>{"Session Stats ("+log.length+") →"}</button>}
+        {lifetime.totalHands>0 && <div style={{marginTop:24,fontSize:12,color:T.textDim,...F}}>{lifetime.totalHands+" hands · "+Math.round(lifetime.greens/lifetime.totalHands*100)+"% · "+lifetime.sessions+" sessions"}</div>}
       </div>
-    );
+    </div>;
   }
 
-  // ═════════════ GAME ═════════════
-  if (!scenario) return null;
-
-  // Seat positions around board — flat row, labeled
-  const seatOrder = (() => {
-    const n = positions.length;
-    const pi = positions.indexOf(scenario.pos);
-    const others = [];
-    for (let i = 1; i < n; i++) {
-      const idx = (pi + i) % n;
-      others.push(positions[idx]);
-    }
-    return others;
-  })();
-
-  const actions = getActions();
-
-  return (
-    <div style={{ minHeight:"100vh", background:P.bg, fontFamily:font, padding:"14px 18px", display:"flex", flexDirection:"column", alignItems:"center" }}>
-      <div style={{ width:"100%", maxWidth:460 }}>
-
-        {/* ── TOP BAR ── */}
-        <div style={{
-          background:P.cream, borderRadius:12, padding:"12px 16px",
-          display:"flex", justifyContent:"space-between", alignItems:"center",
-          marginBottom:16, border:"1px solid #d8d0c0",
-        }}>
-          <button onClick={() => setScreen("menu")} style={{ background:"none", border:"none", color:P.textMid, fontSize:13, cursor:"pointer", fontFamily:font, padding:0 }}>← Menu</button>
-          <div style={{ display:"flex", gap:16, fontSize:14, fontWeight:600 }}>
-            <span style={{ color:P.textLight }}>#{handNum}</span>
-            <span style={{ color:stack>=100?P.green:P.red }}>{stack.toFixed(1)} bb</span>
-          </div>
-          <button onClick={() => { persistSession(log); setScreen("stats"); }} style={{ background:"none", border:"none", color:P.textMid, fontSize:13, cursor:"pointer", fontFamily:font, padding:0 }}>Stats →</button>
+  // ═══════ STATS ═══════
+  if(screen==="stats"){
+    var st=getStats();
+    var pnl={background:T.panel,borderRadius:10,padding:16,marginBottom:10,border:"1px solid "+T.border};
+    return <div style={{minHeight:"100vh",background:T.bg,...F,padding:16,display:"flex",flexDirection:"column",alignItems:"center"}}>
+      <input ref={fileRef} type="file" accept=".csv" style={{display:"none"}} onChange={importCSV}/>
+      <div style={{width:"100%",maxWidth:T.maxW}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <button onClick={function(){setScreen("game");}} style={{background:"none",border:"none",color:T.textMid,fontSize:13,cursor:"pointer",...F}}>{"← Back"}</button>
+          <span style={{fontSize:15,color:T.text,...F}}>SESSION REPORT</span>
+          <div style={{width:40}}/>
         </div>
-
-        {/* ── TABLE / BOARD AREA ── */}
-        <div style={{
-          position:"relative",
-          background:P.boardBg,
-          borderRadius:32,
-          padding:"40px 20px 32px",
-          marginBottom:16,
-          minHeight:180,
-          display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-        }}>
-          {/* Seat circles */}
-          <div style={{
-            display:"flex", justifyContent:"space-around", width:"100%",
-            position:"absolute", top:-16, left:0, right:0, padding:"0 24px",
-          }}>
-            {seatOrder.map(pos => {
-              const isOpp = pos === scenario.oppPos;
-              return (
-                <div key={pos} style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
-                  <div style={{
-                    width:34, height:34, borderRadius:17,
-                    background: isOpp ? scenario.opp.color : P.navyLight,
-                    display:"flex", alignItems:"center", justifyContent:"center",
-                    fontSize: isOpp ? 14 : 10, color:P.cream, fontWeight:700,
-                    border:`2.5px solid ${isOpp ? scenario.opp.color : "#4a6080"}`,
-                  }}>{isOpp ? scenario.opp.emoji : ""}</div>
-                  <span style={{ fontSize:10, fontWeight:700, color: isOpp ? P.gold : "#7a90a8", marginTop:3 }}>{pos}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Board cards */}
-          {scenario.board.length > 0 ? (
-            <div style={{ display:"flex", gap:4, marginTop:8 }}>
-              {scenario.board.map((c,i) => <Card key={i} card={c} board/>)}
+        {!st ? <p style={{color:T.textMid,textAlign:"center"}}>No data yet.</p> : <>
+          <div style={pnl}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
+              {[{l:"Hands",v:st.total,c:T.text},{l:"Accuracy",v:Math.round(st.greens/st.total*100)+"%",c:T.green},{l:"EV",v:(st.totalEv>=0?"+":"")+st.totalEv.toFixed(1),c:st.totalEv>=0?T.green:T.red},{l:"Stack",v:stack.toFixed(1),c:stack>=100?T.green:T.red}].map(function(d,i){return <div key={i} style={{textAlign:"center"}}><div style={{fontSize:22,...F,color:d.c}}>{d.v}</div><div style={{fontSize:10,fontWeight:T.weight,color:T.textDim,textTransform:"uppercase"}}>{d.l}</div></div>;})}
             </div>
-          ) : (
-            <div style={{ color:"#6a80a0", fontSize:13, fontWeight:600, letterSpacing:"0.05em" }}>PREFLOP</div>
-          )}
-
-          {/* Pot info inside table */}
-          <div style={{ marginTop:12, textAlign:"center" }}>
-            <span style={{ fontSize:17, fontWeight:700, color:P.gold }}>{scenario.potSize.toFixed(1)}bb</span>
-            <span style={{ fontSize:11, color:"#7a90a8", marginLeft:6, textTransform:"uppercase" }}>{STREET_NAMES[scenario.street]}</span>
-          </div>
-
-          {/* Player seat indicator */}
-          <div style={{
-            position:"absolute", bottom:-16, left:"50%", transform:"translateX(-50%)",
-            display:"flex", flexDirection:"column", alignItems:"center",
-          }}>
-            <div style={{
-              width:34, height:34, borderRadius:17,
-              background:P.gold, display:"flex", alignItems:"center", justifyContent:"center",
-              fontSize:10, color:P.white, fontWeight:800,
-              border:`2.5px solid ${P.goldDark}`,
-            }}>YOU</div>
-            <span style={{ fontSize:10, fontWeight:700, color:P.gold, marginTop:3 }}>{scenario.pos} ★</span>
-          </div>
-        </div>
-
-        {/* ── NARRATIVE / SITUATION BLOCK ── */}
-        <div style={{
-          background:P.cream, borderRadius:12, padding:"16px 18px",
-          marginBottom:14, border:"1px solid #d8d0c0",
-          fontSize:14, lineHeight:1.75, color:P.text,
-          fontFamily:"Helvetica, Arial, sans-serif",
-        }}>
-          {phase === "action" ? (
-            <div>
-              {(() => {
-                // Build a cohesive situational narrative
-                const posName = scenario.pos;
-                const oppEmoji = scenario.opp.emoji;
-                const oppName = scenario.opp.name;
-                const oppDesc = scenario.opp.id === "tight"
-                  ? "who plays few hands and only bets with strong holdings"
-                  : scenario.opp.id === "aggro"
-                  ? "who bets wide and bluffs often"
-                  : "who plays a balanced, standard game";
-                const oppPosName = scenario.oppPos;
-
-                let handInfo = "";
-                if (scenario.board.length > 0) {
-                  const info = classifyHand(scenario.playerHand, scenario.board);
-                  const drawText = info.draws.length > 0 ? `, plus ${info.draws.map(d => d.desc).join(" and ")}` : "";
-                  handInfo = ` You're holding ${info.handDesc.toLowerCase()}${drawText}.`;
-                } else {
-                  const n = handNotation(scenario.playerHand[0], scenario.playerHand[1]);
-                  handInfo = ` You're holding ${n}.`;
-                }
-
-                if (scenario.street === "preflop") {
-                  if (scenario.preflopSit === "vs_raise") {
-                    return <span>You're at <span style={{color:P.gold, fontWeight:700}}>{posName}</span>. A <span style={{color:scenario.opp.color, fontWeight:700}}>{oppEmoji} {oppName}</span> player {oppDesc} raises to <span style={{color:P.gold, fontWeight:700}}>2.5bb</span> from {oppPosName}.{handInfo}</span>;
-                  } else {
-                    return <span>You're at <span style={{color:P.gold, fontWeight:700}}>{posName}</span>, first to act. A <span style={{color:scenario.opp.color, fontWeight:700}}>{oppEmoji} {oppName}</span> player {oppDesc} is sitting at {oppPosName}.{handInfo}</span>;
-                  }
-                } else {
-                  const streetName = STREET_NAMES[scenario.street].toLowerCase();
-                  if (scenario.betSize > 0) {
-                    return <span>It's the <span style={{color:P.gold, fontWeight:700}}>{streetName}</span>. You're at <span style={{color:P.gold, fontWeight:700}}>{posName}</span> and a <span style={{color:scenario.opp.color, fontWeight:700}}>{oppEmoji} {oppName}</span> player {oppDesc} at {oppPosName} bets <span style={{color:P.gold, fontWeight:700}}>{scenario.betSize}bb</span> into a <span style={{color:P.gold, fontWeight:700}}>{scenario.potSize.toFixed(1)}bb</span> pot.{handInfo}</span>;
-                  } else {
-                    return <span>It's the <span style={{color:P.gold, fontWeight:700}}>{streetName}</span>. You're at <span style={{color:P.gold, fontWeight:700}}>{posName}</span>. A <span style={{color:scenario.opp.color, fontWeight:700}}>{oppEmoji} {oppName}</span> player {oppDesc} at {oppPosName} checks to you. Pot is <span style={{color:P.gold, fontWeight:700}}>{scenario.potSize.toFixed(1)}bb</span>.{handInfo}</span>;
-                  }
-                }
-              })()}
+            <div style={{display:"flex",gap:2,height:3,borderRadius:2,overflow:"hidden",background:T.creamBorder}}>
+              <div style={{width:st.greens/st.total*100+"%",background:T.green}}/>
+              <div style={{width:st.yellows/st.total*100+"%",background:T.gold}}/>
+              <div style={{width:st.reds/st.total*100+"%",background:T.red}}/>
             </div>
-          ) : (
-            <>
-              {/* Feedback */}
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-                <span style={{
-                  display:"inline-block", padding:"4px 12px", borderRadius:4,
-                  background: feedback.rating==="green"?P.green : feedback.rating==="yellow"?P.gold : P.red,
-                  color:P.white, fontWeight:700, fontSize:13,
-                }}>
-                  {feedback.rating==="green"?"✓ Correct":feedback.rating==="yellow"?"≈ Acceptable":"✗ Mistake"}
-                </span>
-                {feedback.evDiff !== 0 && (
-                  <span style={{ fontWeight:700, fontSize:14, color:feedback.evDiff>=0?P.green:P.red }}>
-                    {feedback.evDiff>=0?"+":""}{feedback.evDiff.toFixed(1)} EV
-                  </span>
-                )}
+          </div>
+          <div style={pnl}>
+            <div style={{fontSize:10,fontWeight:T.weight,color:T.textDim,textTransform:"uppercase",marginBottom:8}}>By Street</div>
+            {Object.entries(st.byStreet).map(function(entry){var s=entry[0],d=entry[1];return <div key={s} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid "+T.creamBorder,fontSize:13,...F}}><span>{s}</span><div style={{display:"flex",gap:14}}><span style={{color:T.textDim}}>{d.total}</span>{d.mistakes>0&&<span style={{color:T.red}}>{d.mistakes+" err"}</span>}<span style={{color:d.ev>=0?T.green:T.red,minWidth:45,textAlign:"right"}}>{(d.ev>=0?"+":"")+d.ev.toFixed(1)}</span></div></div>;})}
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:8}}>
+            <button onClick={exportMD} style={{flex:1,padding:12,borderRadius:20,border:"1.5px solid "+T.border,cursor:"pointer",background:copied?T.green+"16":T.panel,color:copied?T.green:T.text,...F,fontSize:13}}>{copied?"✓ Copied MD":"Copy MD"}</button>
+            <button onClick={exportCSV} style={{flex:1,padding:12,borderRadius:20,border:"1.5px solid "+T.border,cursor:"pointer",background:csvCopied?T.green+"16":T.panel,color:csvCopied?T.green:T.text,...F,fontSize:13}}>{csvCopied?"✓ Copied CSV":"Copy CSV"}</button>
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:8}}>
+            <button onClick={function(){fileRef.current&&fileRef.current.click();}} style={{flex:1,padding:12,borderRadius:20,border:"1.5px solid "+T.border,cursor:"pointer",background:T.panel,color:T.text,...F,fontSize:13}}>Import CSV</button>
+            <button onClick={function(){setScreen("game");goNext();}} style={{flex:1,padding:12,borderRadius:20,border:"none",cursor:"pointer",background:T.gold,color:"#fff",...F,fontSize:13}}>{"Continue →"}</button>
+          </div>
+          {!confirmReset ?
+            <button onClick={function(){setConfirmReset(true);}} style={{width:"100%",padding:10,borderRadius:20,border:"1.5px solid "+T.red+"30",cursor:"pointer",background:"transparent",color:T.red,...F,fontSize:12,opacity:0.6}}>Reset All Stats</button>
+          :
+            <div style={{background:T.panel,borderRadius:10,padding:16,border:"1px solid "+T.red,textAlign:"center",marginBottom:10}}>
+              <div style={{fontSize:13,color:T.red,fontWeight:T.weight,marginBottom:10}}>Delete all data permanently?</div>
+              <div style={{display:"flex",gap:8,justifyContent:"center"}}>
+                <button onClick={function(){setConfirmReset(false);}} style={{padding:"8px 24px",borderRadius:16,border:"1.5px solid "+T.border,background:"transparent",color:T.textMid,...F,fontSize:12,cursor:"pointer"}}>Cancel</button>
+                <button onClick={resetStats} style={{padding:"8px 24px",borderRadius:16,border:"none",background:T.red,color:"#fff",...F,fontSize:12,cursor:"pointer"}}>Yes, Reset</button>
               </div>
-              {feedback.rating !== "green" && (
-                <div style={{ fontSize:14, color:P.gold, fontWeight:600, marginBottom:8 }}>Best: {feedback.best}</div>
-              )}
-              <div><NarrativeText text={feedback.explanation}/></div>
-            </>
-          )}
+            </div>
+          }
+        </>}
+      </div>
+    </div>;
+  }
+
+  // ═══════ GAME ═══════
+  if(!scenario)return null;
+
+  var seats=[];
+  var n=positions.length;var pi=positions.indexOf(scenario.pos);
+  for(var i=1;i<n;i++)seats.push(positions[(pi+i)%n]);
+
+  var actions=getActs();
+  var dh=sortH(scenario.playerHand);
+  var isR=scenario.street==="river";
+  var nota=hn(dh[0],dh[1]);
+
+  // Table is fixed height. Circles are positioned OUTSIDE the table div.
+  // Opponent circles: their center = table top edge
+  // YOU circle: its center = table bottom edge
+  var halfSeat=T.seat/2;
+
+  return <div style={{minHeight:"100vh",background:T.bg,...F,padding:T.pagePad+"px 16px",display:"flex",flexDirection:"column",alignItems:"center"}}>
+    <div style={{width:"100%",maxWidth:T.maxW}}>
+
+      {/* HEADER */}
+      <div style={{background:T.panel,borderRadius:T.headerR,padding:T.headerPad+"px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,border:"1px solid "+T.border}}>
+        <button onClick={function(){setScreen("menu");}} style={{background:"none",border:"none",color:T.textMid,fontSize:12,cursor:"pointer",...F,padding:0}}>{"◂ MENU"}</button>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:T.bankrollFont,fontWeight:800,color:stack>=100?T.goldDark:T.red,fontVariantNumeric:"tabular-nums",lineHeight:1,fontFamily:T.font}}>{stack.toFixed(1)}</span>
+          <Chip size={T.chipHeader}/>
         </div>
-
-        {/* ── PLAYER HAND + ACTIONS ── */}
-        <div style={{
-          display:"flex", alignItems:"stretch", gap:14,
-        }}>
-          {/* Cards — left side */}
-          <div style={{ display:"flex", gap:8, flexShrink:0 }}>
-            {scenario.playerHand.map((c,i) => <Card key={i} card={c}/>)}
-          </div>
-
-          {/* Actions — right side, stacked vertically */}
-          <div style={{ flex:1, display:"flex", flexDirection:"column", gap:8, justifyContent:"center" }}>
-            {phase === "action" ? actions.map(a => {
-              const isPassive = a === "Fold" || a === "Check";
-              return (
-                <button key={a} onClick={() => handleAction(a)} style={{
-                  padding:"14px 8px", borderRadius:22, cursor:"pointer",
-                  border: isPassive ? `2px solid #c8c0b0` : "2px solid transparent",
-                  background: isPassive ? "transparent" : P.gold,
-                  color: isPassive ? P.textMid : P.white,
-                  fontWeight:700, fontSize:15, fontFamily:font,
-                  letterSpacing:"0.02em",
-                  transition:"transform 0.1s",
-                }}
-                  onMouseDown={e => e.currentTarget.style.transform="scale(0.96)"}
-                  onMouseUp={e => e.currentTarget.style.transform="scale(1)"}
-                  onMouseLeave={e => e.currentTarget.style.transform="scale(1)"}
-                >{a.toUpperCase()}</button>
-              );
-            }) : (
-              <button onClick={nextScenario} style={{
-                padding:"14px 8px", borderRadius:20, cursor:"pointer",
-                border:`2px solid #c8c0b0`, background:"transparent",
-                color:P.text, fontWeight:700, fontSize:14, fontFamily:font,
-              }}>NEXT HAND →</button>
-            )}
-          </div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <span style={{fontSize:12,color:T.textDim}}>{"#"+handNum}</span>
+          <button onClick={function(){persist(log);setScreen("stats");}} style={{background:"none",border:"none",color:T.textMid,fontSize:12,cursor:"pointer",...F,padding:0}}>{"STATS ▸"}</button>
         </div>
-
       </div>
 
-      <style>{`*{box-sizing:border-box;margin:0;padding:0}`}</style>
+      <div style={{height:T.gapToTable}}/>
+
+      {/* WRAPPER: seats + table in one relative container */}
+      <div style={{position:"relative",marginBottom:halfSeat+22}}>
+
+        {/* Opponent seats — positioned above table, circle center on table top */}
+        <div style={{position:"absolute",top:0,left:0,right:0,display:"flex",justifyContent:"space-around",padding:"0 32px",zIndex:2}}>
+          {seats.map(function(p){
+            var isOpp=p===scenario.oppPos;
+            var col=isOpp?scenario.opp.color:"#3a4e68";
+            var bCol=isOpp?scenario.opp.color:"#4a6888";
+            return <div key={p} style={{display:"flex",flexDirection:"column",alignItems:"center",marginTop:-halfSeat}}>
+              <div style={{width:T.seat,height:T.seat,borderRadius:T.seat/2,background:col,display:"flex",alignItems:"center",justifyContent:"center",fontSize:isOpp?22:14,color:"#e8e4dc",fontWeight:T.weight,border:T.seatBorder+"px solid "+bCol}}>{isOpp?scenario.opp.emoji:"·"}</div>
+              <span style={{fontSize:T.seatLabel,fontWeight:T.weight,color:T.pos[p]||T.textDim,marginTop:4}}>{p}</span>
+            </div>;
+          })}
+        </div>
+
+        {/* TABLE — fixed height */}
+        <div style={{height:TABLE_H,background:T.table,borderRadius:T.tableR,border:"3px solid "+T.tableBorder,boxShadow:"0 4px 24px rgba(0,0,0,0.12),inset 0 0 40px rgba(0,0,0,0.08)",display:"flex",flexDirection:"column",alignItems:"center",paddingTop:T.tableTopPad,paddingBottom:T.tableBotPad,paddingLeft:T.tablePadX,paddingRight:T.tablePadX}}>
+
+          {/* Row 1: Bet/Check pill */}
+          <div style={{height:T.betRowH,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            {scenario.street!=="preflop" ? (
+              scenario.betSize>0 ?
+                <div style={{background:"rgba(0,0,0,0.2)",borderRadius:T.pillR,padding:T.pillPY+"px "+T.pillPX+"px",display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:14}}>{scenario.opp.emoji}</span>
+                  <BV value={scenario.betSize} fs={T.betFont} color="#e0c880" cs={T.chipPot}/>
+                </div>
+              :
+                <div style={{background:"rgba(0,0,0,0.2)",borderRadius:T.pillR,padding:T.pillPY+"px "+T.pillPX+"px",display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:14}}>{scenario.opp.emoji}</span>
+                  <span style={{fontSize:T.betFont,fontWeight:T.weight,color:"#8a9aaa",fontFamily:T.font,letterSpacing:"0.08em"}}>CHECK</span>
+                </div>
+            ) : null}
+          </div>
+
+          <div style={{height:T.innerGap,flexShrink:0}}/>
+
+          {/* Row 2: Board cards or PREFLOP */}
+          <div style={{height:T.boardRowH,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            {scenario.board.length>0 ?
+              <div style={{display:"flex",gap:T.bcGap}}>{scenario.board.map(function(c,i){return <CCard key={i} card={c} board={true}/>;})}</div>
+            :
+              <span style={{color:"#ffffffcc",fontSize:40,fontWeight:T.weight,letterSpacing:"0.15em",position: "relative",top: "-10px"}}>PREFLOP</span>
+            }
+          </div>
+
+          <div style={{height:T.innerGap,flexShrink:0}}/>
+
+          {/* Row 3: Pot pill */}
+          <div style={{height:T.potRowH,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <div style={{background:"rgba(0,0,0,0.2)",borderRadius:T.pillR,padding:T.pillPY+"px "+T.pillPX+"px",display:"flex",alignItems:"center"}}>
+              <BV value={scenario.potSize} fs={T.potFont} color="#e8d090" cs={T.chipPot}/>
+            </div>
+          </div>
+        </div>
+
+        {/* YOU — positioned below table, circle center on table bottom */}
+        <div style={{position:"absolute",bottom:0,left:"50%",transform:"translateX(-50%)",display:"flex",flexDirection:"column",alignItems:"center",marginBottom:-45,zIndex:2}}>
+          <div style={{width:T.seat,height:T.seat,borderRadius:T.seat/2,background:T.gold,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"#fff",fontWeight:800,border:T.seatBorder+"px solid "+T.goldDark}}>YOU</div>
+          <span style={{fontSize:T.seatLabel,fontWeight:T.weight,color:T.pos[scenario.pos]||T.gold,marginTop:4}}>{scenario.pos}</span>
+        </div>
+
+      </div>{/* end wrapper */}
+
+      {/* NARRATIVE */}
+      <div style={{height:T.narrH,background:T.panel,borderRadius:T.narrR,border:"1px solid "+T.border,marginBottom:T.gapNarrToHand,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <div style={{flex:"1 1 auto",padding:"14px 18px",fontSize:T.narrFont,lineHeight:T.narrLineH,color:T.text,fontWeight:600,fontFamily:T.font,overflowY:"auto"}}>
+          {phase==="action" ? <div>{(function(){
+            var pN=scenario.pos,oE=scenario.opp.emoji,oN=scenario.opp.name;
+            var oD=scenario.opp.id==="tight"?"who plays few hands":scenario.opp.id==="aggro"?"who bets wide and bluffs often":"who plays a balanced game";
+            var oP=scenario.oppPos;
+            var hI="";
+            if(scenario.board.length>0){
+              var info=classify(scenario.playerHand,scenario.board);
+              var dt=(!isR&&info.draws.length>0)?", plus "+info.draws.map(function(d){return d.desc;}).join(" and "):"";
+              hI=" You're holding "+info.handDesc.toLowerCase()+dt+".";
+            }else{hI=" You're holding "+nota+".";}
+            if(scenario.street==="preflop"){
+              if(scenario.preflopSit==="vs_raise")return <span>{"You're at "}<PB pos={pN}/>{". A "}<span style={{color:scenario.opp.color,fontWeight:T.weight}}>{oE+" "+oN}</span>{" player "+oD+" raises to "}<BV value={2.5} fs={14} color={T.goldDark} cs={16}/>{" from "}<PB pos={oP}/>{"."}{hI}</span>;
+              return <span>{"You're at "}<PB pos={pN}/>{", first to act. A "}<span style={{color:scenario.opp.color,fontWeight:T.weight}}>{oE+" "+oN}</span>{" player "+oD+" sits at "}<PB pos={oP}/>{"."}{hI}</span>;
+            }
+            var sn=SN[scenario.street].toLowerCase();
+            if(scenario.betSize>0)return <span>{"It's the "}<span style={{color:T.goldDark,fontWeight:T.weight}}>{sn}</span>{". You're at "}<PB pos={pN}/>{" and a "}<span style={{color:scenario.opp.color,fontWeight:T.weight}}>{oE+" "+oN}</span>{" player "+oD+" at "}<PB pos={oP}/>{" bets "}<BV value={scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" into a "}<BV value={scenario.potSize} fs={14} color={T.goldDark} cs={16}/>{" pot."}{hI}</span>;
+            return <span>{"It's the "}<span style={{color:T.goldDark,fontWeight:T.weight}}>{sn}</span>{". You're at "}<PB pos={pN}/>{". A "}<span style={{color:scenario.opp.color,fontWeight:T.weight}}>{oE+" "+oN}</span>{" player "+oD+" at "}<PB pos={oP}/>{" checks to you."}{hI}</span>;
+          })()}</div>
+          : <>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{display:"inline-block",padding:"4px 12px",borderRadius:4,background:feedback.rating==="green"?T.green:feedback.rating==="yellow"?T.gold:T.red,color:"#fff",fontWeight:T.weight,fontSize:13}}>
+                {feedback.rating==="green"?"✓ Correct":feedback.rating==="yellow"?"≈ Acceptable":"✗ Mistake"}
+              </span>
+              {feedback.evDiff!==0 && <span style={{fontWeight:T.weight,fontSize:14,color:feedback.evDiff>=0?T.green:T.red}}>{(feedback.evDiff>=0?"+":"")+feedback.evDiff.toFixed(1)+" EV"}</span>}
+            </div>
+            {feedback.rating!=="green" && <div style={{fontSize:14,color:T.goldDark,fontWeight:T.weight,marginBottom:6}}>{"Best: "+feedback.best}</div>}
+            <div style={{fontSize:13.5,lineHeight:1.7,fontWeight:500}}><NT text={feedback.explanation}/></div>
+          </>}
+        </div>
+      </div>
+
+      {/* HAND + ACTIONS */}
+      <div style={{display:"flex",gap:T.cardGap,width:"100%",alignItems:"flex-start"}}>
+        <div style={{flex:"0 0 "+T.cardSplit*100+"%",display:"flex",gap:T.cardGap,justifyContent:"center"}}>
+          {dh.map(function(c,i){return <CCard key={i} card={c}/>;})}
+        </div>
+        <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
+          {phase==="action" ? actions.map(function(a){
+            var passive=a==="Fold"||a==="Check";
+            return <button key={a} onClick={function(){act(a);}} style={{padding:T.btnPadY+"px 4px",borderRadius:T.btnR,cursor:"pointer",border:passive?"2px solid "+T.border:"2px solid transparent",background:passive?"transparent":T.gold,color:passive?T.textMid:"#fff",...F,fontSize:T.btnFont,letterSpacing:"0.04em"}}>{a.toUpperCase()}</button>;
+          }) : <button onClick={goNext} style={{padding:"12px 4px",borderRadius:T.btnR,cursor:"pointer",border:"2px solid "+T.border,background:"transparent",color:T.text,...F,fontSize:T.btnFont}}>{"NEXT →"}</button>}
+        </div>
+      </div>
+
     </div>
-  );
+    <style>{["*{box-sizing:border-box;margin:0;padding:0}","::-webkit-scrollbar{width:4px}","::-webkit-scrollbar-track{background:transparent}","::-webkit-scrollbar-thumb{background:"+T.border+";border-radius:2px}"].join("")}</style>
+  </div>;
 }
