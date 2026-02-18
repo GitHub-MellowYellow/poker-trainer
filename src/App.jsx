@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 // ═══════════════════════════════════════════════════════════════
 // DESIGN TOKENS
@@ -117,6 +117,61 @@ var OPP = [
   { id:"neutral", name:"Regular", emoji:"⚖️", color:T.oppNeutral },
   { id:"aggro", name:"Aggro", emoji:"🔥", color:T.oppAggro },
 ];
+
+// ═══════════════════════════════════════════════════════════════
+// GLOSSARY — beginner-friendly tooltip definitions
+// ═══════════════════════════════════════════════════════════════
+
+var GLOSSARY = {
+  "Careful": "💡 The 'Rock.' This player only plays premium hands. If they are betting, they aren't kidding—they have something strong.",
+  "Regular": "💡 A disciplined strategist. They play a balanced game, mixing strong hands with calculated bluffs to keep you guessing.",
+  "Aggro": "💡 A high-pressure player who uses chips as a weapon. They win by making you uncomfortable enough to fold.",
+  "UTG": "💡 Under the Gun. First to act with the whole table waiting to pounce. You need a powerhouse hand to survive crossfire.",
+  "MP": "💡 Middle Position. Not good, not terrible. You need strong hands to have a chance since the best seats act after you.",
+  "CO": "💡 Cut-Off. A prime seat to 'steal' the pot before the dealer gets a chance. Only two players left to act after you.",
+  "BTN": "💡 The Button. The best seat in the house. You act last, getting a free look at everyone's moves before you make yours.",
+  "SB": "💡 Small Blind. A forced bet in a tough spot. You act first after the flop, making it an uphill battle to win the hand.",
+  "BB": "💡 Big Blind. Forced bet. You get a 'discount' to see the flop, but you'll be defending your territory from a difficult position later.",
+  "BB_unit": "💡 The currency of poker strategy. It measures your stack size relative to the stakes rather than the dollar amount.",
+  "preflop": "💡 The opening act. You only know your two private cards and the strength of your position.",
+  "flop": "💡 The first three shared cards. This is where most hands are won, lost, or defined.",
+  "turn": "💡 The fourth shared card. The plot thickens and the price of staying in the hand usually goes up.",
+  "river": "💡 The fifth and final card. No more help is coming—it's time for the moment of truth.",
+  "overpair": "💡 Your pocket pair is higher than any card on the board. A strong hand, but watch out for 'wet' boards.",
+  "top pair": "💡 You paired the highest card on the table. A reliable hand, though its strength depends on your second card (the kicker).",
+  "middle pair": "💡 One of your cards matches a middle card on the board. Vulnerable to anyone with the top pair; proceed with caution.",
+  "bottom pair": "💡 You paired the lowest card on the table. Often a 'fold' waiting to happen unless you're catching a bluff.",
+  "two pair": "💡 Strong if both pairs come from your hole cards, but riskier if one pair is shared by everyone on the board.",
+  "three of a kind": "💡 A powerhouse hand that often stays hidden, ready to trap over-confident opponents.",
+  "full house": "💡 Three of a kind plus a pair. A near-invincible hand that usually takes down the entire pot.",
+  "flush": "💡 Five cards of the same suit. Strong and hard to beat, unless the board shows a pair for a possible full house.",
+  "straight": "💡 Five cards in numerical order. A deceptive hand that can crush players holding high pairs.",
+  "underpair": "💡 Your pocket pair is lower than everything on the board. You're looking for a miracle or a quick exit.",
+  "ace high": "💡 No pair, just an Ace. Sometimes enough to win against a total bluff, but rarely enough to bet on.",
+  "overcards": "💡 No pair yet, but both your cards are higher than the board. You’re looking for a lucky catch on the next street.",
+  "pocket pair": "💡 Two of the same card in your hand. A head start that can turn into a monster if you hit a third matching card.",
+  "high card": "💡 The weakest possible hand. If you're here at the river, you're either bluffing or losing.",
+  "flush draw": "💡 You have four cards of one suit and need one more. You have a ~35% chance to hit by the river.",
+  "straight draw": "💡 You’re one card short of a straight. A work-in-progress hand that needs the right card to become profitable.",
+  "open-ended": "💡 Four cards in a row that can be completed at either end. With 8 possible 'outs,' you have a solid chance at glory.",
+  "OESD": "💡 Open-Ended Straight Draw. You have 8 cards in the deck that can complete your hand. One of the best draws to have.",
+  "gutshot": "💡 An 'inside' straight draw. You need one specific middle card to hit. A long shot, but it hits like a bolt of lightning.",
+  "semi-bluff": "💡 Betting with a weak hand that has potential. You win by forcing a fold now or hitting your card later.",
+  "bluff-catcher": "💡 A hand that can't beat a serious bet but crushes a lie. You’re playing a game of 'I don't believe you.'",
+  "pot odds": "💡 The price of the 'call' versus the size of the prize. Tells you if your draw is a smart investment or a bad gamble.",
+  "+EV": "💡 Positive Expected Value. A move that makes money over the long run, even if this specific hand ends in disaster.",
+  "value": "💡 Betting because you want to get paid. You believe you have the best hand and want the opponent to call with worse.",
+  "profitable": "💡 A play that consistently adds to your stack over hundreds of sessions.",
+  "Wet board": "💡 Coordinated cards where straights and flushes are lurking. Your strong hand might need an umbrella.",
+  "Dry board": "💡 Disconnected and safe. If you have the best hand now, you’ll likely have it on the river.",
+  "Mixed board": "💡 Between wet and dry—some draws are possible, but the board isn't a total minefield yet.",
+  "Fold": "💡 Releasing your cards. The most important move in poker—it saves you from losing chips you don't have to.",
+  "Call": "💡 Matching the current bet. You’re paying to see the next card or to reach the showdown.",
+  "Raise": "💡 Increasing the price of admission. It forces your opponents to have a real hand or get out of the way.",
+  "3-Bet": "💡 The first re-raise. It turns up the heat to build a pot with strong hands, seize control of the action, or pressure a weak raiser into folding.",
+  "Check": "💡 A tactical pass. Use it to see a free card or to set a trap for an aggressive opponent.",
+  "Bet": "💡 Being the first to put chips in. It takes the lead and puts the pressure on everyone else.",
+};
 
 // ═══════════════════════════════════════════════════════════════
 // PREFLOP RANGES
@@ -287,13 +342,30 @@ function classify(hole,board){
     if(be.rank>=ev.rank){cat="marginal";str=0.25;desc=ev.name+" (mostly on board)";}
     else{cat="monster";str=0.85+ev.rank*0.015;}
   }else if(ev.rank===3){cat="strong";str=0.65;desc="Three of a Kind";}
-  else if(ev.rank===2){cat="good";str=0.55;desc="Two Pair";}
+  else if(ev.rank===2){
+    // Check whether hole cards contribute to the pairs
+    var af2={};all.forEach(function(c){var v=RV[c.rank];af2[v]=(af2[v]||0)+1;});
+    var pairVals2=[];Object.keys(af2).forEach(function(k){if(af2[k]>=2)pairVals2.push(+k);});
+    pairVals2.sort(function(a,b){return b-a;});
+    var holePairs2=pairVals2.filter(function(pv){return hv[0]===pv||hv[1]===pv;});
+    if(holePairs2.length===0){
+      // Both pairs on board — player is just playing the board
+      var kick2=Math.max(hv[0],hv[1]);
+      if(kick2>=13){var kr2=kick2===RV[hole[0].rank]?hole[0].rank:hole[1].rank;cat="marginal";str=0.25;desc="Two Pair (on board, "+RN[kr2]+" kicker)";}
+      else{cat="trash";str=0.1;desc="Two Pair (on board)";}
+    }else{
+      var bestHP=Math.max.apply(null,holePairs2);
+      if(bestHP>=bv[0]){cat="good";str=0.55;desc="Two Pair";}
+      else if(bestHP>=bv[Math.min(1,bv.length-1)]){cat="good";str=0.45;desc="Two Pair";}
+      else{cat="marginal";str=0.35;desc="Two Pair (weak)";}
+    }
+  }
   else if(ev.rank===1){
     var af={};all.forEach(function(c){var v=RV[c.rank];af[v]=(af[v]||0)+1;});
     var pv=0;Object.keys(af).forEach(function(k){if(af[k]===2)pv=+k;});
     var bf={};bv.forEach(function(v){bf[v]=(bf[v]||0)+1;});
     var bp=Object.values(bf).some(function(c){return c>=2;});
-    if(bp&&hv.indexOf(pv)===-1){cat="trash";str=0.1;desc="High card (board is paired)";}
+    if(bp&&hv.indexOf(pv)===-1){var kick=Math.max(hv[0],hv[1]);cat="trash";str=0.1;desc=kick>=13?"Pair on board, "+RN[kick===hv[0]?hole[0].rank:hole[1].rank]+" kicker":"Pair on board";}
     else if(hv[0]===hv[1]&&hv[0]>bv[0]){cat="strong";str=0.55;desc="Overpair ("+RN[hole[0].rank]+"s)";}
     else if(hv[0]===hv[1]){if(hv[0]>=bv[bv.length-1]){cat="marginal";str=0.22;desc="Pocket pair below top card";}else{cat="weak";str=0.15;desc="Low pocket pair (underpair)";}}
     else if(pv===bv[0]&&hv.indexOf(pv)!==-1){var k=hv[0]!==pv?hv[0]:hv[1];if(k>=11){cat="good";str=0.45;desc="Top pair, strong kicker";}else if(k>=8){cat="marginal";str=0.32;desc="Top pair, medium kicker";}else{cat="marginal";str=0.28;desc="Top pair, weak kicker";}}
@@ -496,6 +568,21 @@ function genScenario(positions){
     var pfSit="open";
     if(pos==="BB"||pos==="SB")pfSit=Math.random()<0.5?"vs_raise":"open";
     else pfSit=Math.random()<0.25?"vs_raise":"open";
+
+    // Fix opponent position for preflop action order
+    var preOrder=positions.length>=6?P6:P3;
+    var pIdx=preOrder.indexOf(pos);
+    if(pfSit==="open"){
+      var behind=[];
+      for(var bi=pIdx+1;bi<preOrder.length;bi++){if(positions.indexOf(preOrder[bi])!==-1)behind.push(preOrder[bi]);}
+      if(behind.length>0)oppPos=behind[0|Math.random()*behind.length];
+    }else{
+      var before=[];
+      for(var bfi=0;bfi<pIdx;bfi++){if(positions.indexOf(preOrder[bfi])!==-1)before.push(preOrder[bfi]);}
+      if(pos==="BB"||pos==="SB")before=positions.filter(function(p){return p!==pos;});
+      if(before.length>0)oppPos=before[0|Math.random()*before.length];
+    }
+
     if(pfSit==="vs_raise"){potSize=3.5;betSize=2.5;}
     else{potSize=1.5;betSize=0;}
     return{street:street,pos:pos,opp:opp,oppPos:oppPos,playerHand:pH,oppHand:oH,board:board,potSize:potSize,betSize:betSize,preflopSit:pfSit,postflopSit:null,playerIsOOP:false};
@@ -766,6 +853,7 @@ function buildNarr(best,info,opp,street,pot,bet,board,postflopSit,showPct,mcEq,c
   var ao=isR?0:info.drawOuts;
   var tex=info.boardTexture;
   var hd=info.handDesc;
+  if(hd==="Nothing"&&ad.length>0){hd=dt.charAt(0).toUpperCase()+dt.slice(1);}
   var eqPct=mcEq!=null?Math.round(mcEq*100):null;
 
   // Texture phrase — woven into description, not appended
@@ -789,8 +877,15 @@ function buildNarr(best,info,opp,street,pot,bet,board,postflopSit,showPct,mcEq,c
     var pov=Math.round(needed*100);
 
     if(closeSpot){
-      if(showPct)return hd+texP+" — roughly "+eqPct+"% equity, needing "+pov+"% to call "+bet+"BB into "+(origPot+bet)+"BB. Genuinely close. Both calling and folding are reasonable here.";
-      return hd+texP+" — a genuinely close spot. Both calling and folding are reasonable here. "+oc;
+      var oppId=opp.id;
+      var closeMsg;
+      if(oppId==="tight"&&best==="Fold") closeMsg="Marginal equity, but a Careful player's tight range tips the balance. Lean toward folding.";
+      else if(oppId==="tight"&&best==="Call") closeMsg="Just enough equity to call, but a Careful player rarely bluffs — proceed cautiously.";
+      else if(oppId==="aggro"&&best==="Call") closeMsg="Close spot, but an Aggro player's wide betting range gives you enough equity to continue.";
+      else if(oppId==="aggro"&&best==="Fold") closeMsg="Even against a wide range, you're just below breakeven. Fold is the disciplined play.";
+      else closeMsg="A genuinely close spot. Both calling and folding are reasonable here.";
+      if(showPct)return hd+texP+" — roughly "+eqPct+"% equity, needing "+pov+"% to call "+bet+"BB into "+(origPot+bet)+"BB. "+closeMsg;
+      return hd+texP+" — "+closeMsg;
     }
 
     if(best==="Fold"){
@@ -964,7 +1059,8 @@ function preflopStrengthNote(nota,pos){
   }
   if(isSuited&&Math.abs(hiV-loV)<=2)return nota+" is a suited connector. Playable in position for its straight and flush potential, but low raw equity.";
   if(hiV>=12)return nota+" has one strong card but a weak kicker. Often dominated by better hands in the same range.";
-  return nota+" is a speculative hand. It needs a favorable position and loose table to be playable.";
+  if(isSuited)return nota+" is a suited hand with a wide gap. Flush potential gives it some value in late position, but straight equity is too limited to rely on.";
+  return nota+" is an unplayable hand. No suit advantage, poor connectivity, and easily dominated. Even from the BTN this hand can't realize enough equity to be profitable.";
 }
 
 function evalPre(action,nota,pos,sit,showPct){
@@ -1047,7 +1143,7 @@ var SK="poker-trainer-data";
 var SETK="poker-trainer-settings";
 function loadLocal(){try{var r=localStorage.getItem(SK);return r?JSON.parse(r):null;}catch(e){return null;}}
 function saveLocal(d){try{if(d)localStorage.setItem(SK,JSON.stringify(d));else localStorage.removeItem(SK);}catch(e){}}
-function loadSettings(){try{var r=localStorage.getItem(SETK);return r?JSON.parse(r):{showPct:false,showPreEq:false};}catch(e){return{showPct:false,showPreEq:false};}}
+function loadSettings(){try{var r=localStorage.getItem(SETK);return r?JSON.parse(r):{showPct:false,showPreEq:false,showHandInfo:false};}catch(e){return{showPct:false,showPreEq:false,showHandInfo:false};}}
 function saveSettings(s){try{localStorage.setItem(SETK,JSON.stringify(s));}catch(e){}}
 
 // ═══════════════════════════════════════════════════════════════
@@ -1066,14 +1162,32 @@ function BV(props){
   </span>;
 }
 
-function PB(props){return <span style={{color:T.pos[props.pos]||T.gold,fontWeight:T.weight}}>{props.pos}</span>;}
+function PB(props){
+  var gloss=GLOSSARY[props.pos]||"";
+  var mkTip=gloss&&props.showTip?function(e){e.stopPropagation();props.showTip(e,gloss);}:null;
+  return <span onMouseEnter={mkTip} onMouseLeave={props.showTip?function(){props.showTip(null);}:null} onClick={mkTip} style={{color:T.pos[props.pos]||T.gold,fontWeight:T.weight,cursor:gloss&&props.showTip?"help":undefined}}>{props.pos}</span>;
+}
+function StreetBadge(props){
+  var gloss=GLOSSARY[props.street]||"";
+  var mkTip=gloss&&props.showTip?function(e){e.stopPropagation();props.showTip(e,gloss);}:null;
+  return <span onMouseEnter={mkTip} onMouseLeave={props.showTip?function(){props.showTip(null);}:null} onClick={mkTip} style={{color:T.goldDark,fontWeight:T.weight,cursor:gloss&&props.showTip?"help":undefined}}>{SN[props.street]}</span>;
+}
 
 // ═══════════════════════════════════════════════════════════════
 // NARRATIVE TEXT RENDERER
 // ═══════════════════════════════════════════════════════════════
 
+function findGloss(txt){
+  if(GLOSSARY[txt])return GLOSSARY[txt];
+  var low=txt.toLowerCase();
+  var keys=Object.keys(GLOSSARY);
+  for(var i=0;i<keys.length;i++){if(keys[i].toLowerCase()===low)return GLOSSARY[keys[i]];}
+  return null;
+}
+
 function NT(props){
   var text=props.text||"";
+  var showTip=props.showTip;
   var pats=[
     {re:/\b([AKQJT98765432]{2}[so])\b/g,t:"hand"},
     {re:/\b([AKQJT98765432])\1\b/g,t:"hand"},
@@ -1086,6 +1200,7 @@ function NT(props){
     {re:/(semi-bluff|bluff-catcher|profitable|\+EV|value|pot odds)/gi,t:"hl"},
     {re:/\b(Fold|Call|Raise|3-Bet|Check|Bet)\b/g,t:"hl"},
     {re:/(Wet board|Dry board|Mixed board)/gi,t:"hl"},
+    {re:/\b(preflop|flop|turn|river)\b/gi,t:"hl"},
   ];
   var parts=[{text:text,t:"plain"}];
   for(var pi=0;pi<pats.length;pi++){
@@ -1103,9 +1218,11 @@ function NT(props){
     parts=next;
   }
   return <>{parts.map(function(p,i){
-    if(p.t==="pos")return <PB key={i} pos={p.text}/>;
+    var gloss=p.t!=="plain"?findGloss(p.text):null;
+    var mkTip=gloss&&showTip?function(e){e.stopPropagation();showTip(e,gloss);}:null;
+    if(p.t==="pos")return <span key={i} onMouseEnter={mkTip} onMouseLeave={showTip?function(){showTip(null);}:null} onClick={mkTip} style={{color:T.pos[p.text]||T.gold,fontWeight:T.weight,cursor:gloss&&showTip?"help":undefined}}>{p.text}</span>;
     if(p.t==="hand")return <span key={i} style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontWeight:T.weight,color:T.text,border:"1px solid "+T.border}}>{p.text}</span>;
-    if(p.t==="hl")return <span key={i} style={{color:T.goldDark,fontWeight:T.weight}}>{p.text}</span>;
+    if(p.t==="hl")return <span key={i} onMouseEnter={mkTip} onMouseLeave={showTip?function(){showTip(null);}:null} onClick={mkTip} style={{color:T.goldDark,fontWeight:T.weight,cursor:gloss&&showTip?"help":undefined}}>{p.text}</span>;
     return <span key={i}>{p.text}</span>;
   })}</>;
 }
@@ -1119,14 +1236,16 @@ function CCard(props){
   var col=SC[card.suit];var rank=RD[card.rank]||card.rank;
   var animStyle={animationDelay:delay+"ms"};
   if(isBoard){
-    return <div className="board-anim" style={{width:T.bcW,height:T.bcH,borderRadius:T.bcR,background:T.cream,border:"1.5px solid "+T.creamBorder,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:T.font,boxShadow:"0 2px 8px rgba(0,0,0,0.15)",...animStyle}}>
-      <span style={{fontSize:T.bcRank,fontWeight:800,color:col,lineHeight:1}}>{rank}</span>
-      <span style={{fontSize:T.bcSuit,color:col,lineHeight:1,marginTop:2}}>{card.suit}</span>
+    var bw=props.bcW||T.bcW,bh=props.bcH||T.bcH,br=props.bcRank||T.bcRank,bsu=props.bcSuit||T.bcSuit;
+    return <div className="board-anim" style={{width:bw,height:bh,borderRadius:T.bcR,background:T.cream,border:"1.5px solid "+T.creamBorder,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:T.font,boxShadow:"0 2px 8px rgba(0,0,0,0.15)",...animStyle}}>
+      <span style={{fontSize:br,fontWeight:800,color:col,lineHeight:1}}>{rank}</span>
+      <span style={{fontSize:bsu,color:col,lineHeight:1,marginTop:2}}>{card.suit}</span>
     </div>;
   }
-  return <div className="card-anim" style={{width:T.cardW,height:T.cardH,borderRadius:T.cardR,background:T.cream,border:"2px solid "+T.creamBorder,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:T.font,boxShadow:"0 4px 16px rgba(0,0,0,0.1)",gap:2,...animStyle}}>
-    <span style={{fontSize:rank.length>1?T.cardRank10:T.cardRank,fontWeight:800,color:col,lineHeight:1}}>{rank}</span>
-    <span style={{fontSize:T.cardSuit,color:col,lineHeight:1}}>{card.suit}</span>
+  var cw=props.cardW||T.cardW,ch=props.cardH||T.cardH,cr=props.cardRank||T.cardRank,cs=props.cardSuit||T.cardSuit;
+  return <div className="card-anim" style={{width:cw,height:ch,borderRadius:T.cardR,background:T.cream,border:"2px solid "+T.creamBorder,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:T.font,boxShadow:"0 4px 16px rgba(0,0,0,0.1)",gap:2,...animStyle}}>
+    <span style={{fontSize:cr,fontWeight:800,color:col,lineHeight:1}}>{rank}</span>
+    <span style={{fontSize:cs,color:col,lineHeight:1}}>{card.suit}</span>
   </div>;
 }
 
@@ -1152,13 +1271,49 @@ export default function PokerTrainer(){
   var [evPulse,setEvPulse]=useState(null);
   var [btnFlash,setBtnFlash]=useState(null);
   var [debugData,setDebugData]=useState(null);
+  var [tipState,setTipState]=useState(null);
   var fileRef=useRef(null);
   var positions=tableSize===6?P6:P3;
   var F={fontFamily:T.font,fontWeight:T.weight};
 
+  // Screen size for responsive layout
+  var [screenH,setScreenH]=useState(typeof window!=="undefined"?window.innerHeight:900);
+  var [screenW,setScreenW]=useState(typeof window!=="undefined"?window.innerWidth:480);
+  var smallScreen=screenH<750;
+  // Dynamic board card width: fit 5 cards within table
+  var effectiveMaxW=Math.min(T.maxW,screenW-T.pagePad*2);
+  var tableInnerW=effectiveMaxW-T.tablePadX*2-6;
+  var dynBcW=Math.min(T.bcW,Math.floor((tableInnerW-4*T.bcGap)/5));
+  var dynBcH=Math.round(dynBcW*T.bcH/T.bcW);
+  var dynBcRank=Math.round(dynBcW*T.bcRank/T.bcW);
+  var dynBcSuit=Math.round(dynBcW*T.bcSuit/T.bcW);
+  // Adaptive heights for small screens
+  var dynNarrH=smallScreen?170:T.narrH;
+  var dynCardH=smallScreen?164:T.cardH;
+  var dynCardW=Math.round(dynCardH*T.cardW/T.cardH);
+  var dynCardRank=smallScreen?82:T.cardRank;
+  var dynCardSuit=smallScreen?28:T.cardSuit;
+  var dynHeaderPad=smallScreen?10:12;
+
+  // Tooltip helper
+  function showTip(e,text){
+    if(!e||!text){setTipState(null);return;}
+    var rect=e.currentTarget.getBoundingClientRect();
+    var x=rect.left+rect.width/2;
+    var y=rect.top;
+    var showBelow=y<120;
+    setTipState({text:text,x:x,y:showBelow?rect.bottom+6:y-6,below:showBelow});
+  }
+
   var persist=useCallback(function(sl){
     if(!sl.length)return;
     setLT(function(p){var m={totalHands:p.totalHands+sl.length,greens:p.greens+sl.filter(function(e){return e.rating==="green";}).length,yellows:p.yellows+sl.filter(function(e){return e.rating==="yellow";}).length,reds:p.reds+sl.filter(function(e){return e.rating==="red";}).length,totalEv:p.totalEv+sl.reduce(function(s,e){return s+e.ev;},0),sessions:p.sessions+1};saveLocal(m);return m;});
+  },[]);
+
+  useEffect(function(){
+    function onResize(){setScreenH(window.innerHeight);setScreenW(window.innerWidth);}
+    window.addEventListener("resize",onResize);
+    return function(){window.removeEventListener("resize",onResize);};
   },[]);
 
   // Start preserves log if just changing table size
@@ -1169,7 +1324,7 @@ export default function PokerTrainer(){
     setSc(genScenario(positions));setPhase("action");setFB(null);setScreen("game");setAnimKey(function(k){return k+1;});setBtnFlash(null);
   },[positions,log,persist]);
 
-  var goNext=useCallback(function(){setHN(function(h){return h+1;});setSc(genScenario(positions));setPhase("action");setFB(null);setAnimKey(function(k){return k+1;});setBtnFlash(null);},[positions]);
+  var goNext=useCallback(function(){setHN(function(h){return h+1;});setSc(genScenario(positions));setPhase("action");setFB(null);setAnimKey(function(k){return k+1;});setBtnFlash(null);setTipState(null);},[positions]);
 
   var act=useCallback(function(action){
     if(!scenario)return;
@@ -1182,7 +1337,14 @@ export default function PokerTrainer(){
     setBtnFlash({action:action,rating:ev.rating});
     setEvPulse(ev.evDiff>=0?"green":"red");
     setTimeout(function(){setEvPulse(null);},600);
-    setLog(function(p){return p.concat([{hand:handNum,pos:scenario.pos,cards:n,board:scenario.board.length>0?scenario.board.map(cstr).join(" "):"--",pot:scenario.potSize.toFixed(1),bet:scenario.betSize>0?scenario.betSize.toFixed(1):"--",street:SN[scenario.street],situation:scenario.street==="preflop"?scenario.preflopSit:(scenario.betSize>0?"vs bet":"checked to"),opp:scenario.opp.name,action:action,correct:ev.best,rating:ev.rating,ev:ev.evDiff}]);});
+    var logNarr=scenario.street==="preflop"
+      ?(scenario.preflopSit==="vs_raise"
+          ?scenario.opp.emoji+" "+scenario.opp.name+" player raises from "+scenario.oppPos+". You're at "+scenario.pos+"."
+          :"You're at "+scenario.pos+".")
+      :"It's the "+SN[scenario.street].toLowerCase()+". "+(scenario.betSize>0
+          ?scenario.opp.emoji+" "+scenario.opp.name+" player bets "+scenario.betSize.toFixed(1)+"BB into a "+(scenario.potSize-scenario.betSize).toFixed(1)+"BB pot."
+          :scenario.opp.emoji+" "+scenario.opp.name+" player checks.");
+    setLog(function(p){return p.concat([{hand:handNum,pos:scenario.pos,cards:n,board:scenario.board.length>0?scenario.board.map(cstr).join(" "):"--",pot:scenario.potSize.toFixed(1),bet:scenario.betSize>0?scenario.betSize.toFixed(1):"--",street:SN[scenario.street],situation:scenario.street==="preflop"?scenario.preflopSit:(scenario.betSize>0?"vs bet":"checked to"),opp:scenario.opp.name,oppEmoji:scenario.opp.emoji,oppColor:scenario.opp.color,action:action,correct:ev.best,rating:ev.rating,ev:ev.evDiff,narrative:logNarr,explanation:ev.explanation}]);});
   },[scenario,handNum,settings.showPct]);
 
   var getActs=function(){
@@ -1296,6 +1458,37 @@ export default function PokerTrainer(){
             <div style={{fontSize:10,fontWeight:T.weight,color:T.textDim,textTransform:"uppercase",marginBottom:8}}>By Street</div>
             {Object.entries(st.byStreet).map(function(entry){var s=entry[0],d=entry[1];return <div key={s} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid "+T.creamBorder,fontSize:13,...F}}><span>{s}</span><div style={{display:"flex",gap:14}}><span style={{color:T.textDim}}>{d.total}</span>{d.mistakes>0&&<span style={{color:T.red}}>{d.mistakes+" err"}</span>}<span style={{color:d.ev>=0?T.green:T.red,minWidth:45,textAlign:"right"}}>{(d.ev>=0?"+":"")+d.ev.toFixed(1)}</span></div></div>;})}
           </div>
+          {log.length>0&&<div style={pnl}>
+            <div style={{fontSize:10,fontWeight:T.weight,color:T.textDim,textTransform:"uppercase",marginBottom:10}}>{"Last "+Math.min(log.length,10)+" Hands"}</div>
+            {log.slice(-10).reverse().map(function(e,i){
+              var rColor=e.rating==="green"?T.green:e.rating==="yellow"?T.gold:T.red;
+              var isCorrect=e.action===e.correct;
+              var isLast=i===Math.min(log.length,10)-1;
+              return <div key={i} style={{borderLeft:"3px solid "+rColor,paddingLeft:10,marginBottom:isLast?0:12,paddingBottom:isLast?0:12,borderBottom:isLast?"none":"1px solid "+T.creamBorder}}>
+                <div style={{display:"flex",flexWrap:"wrap",gap:"0 6px",alignItems:"baseline",marginBottom:3,...F,fontSize:12,fontWeight:700,color:T.text}}>
+                  <span style={{color:T.textDim,fontWeight:500}}>{"#"+e.hand}</span>
+                  <span style={{color:T.textDim}}>{"·"}</span>
+                  <span>{e.street}</span>
+                  <span style={{color:T.textDim}}>{"·"}</span>
+                  <span style={{color:T.pos[e.pos]||T.gold}}>{e.pos}</span>
+                  <span style={{color:T.textDim}}>{"·"}</span>
+                  <span>{e.cards}</span>
+                  <span style={{color:T.textDim}}>{"·"}</span>
+                  <span style={{color:T.textDim,fontWeight:500}}>{e.board}</span>
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:"0 6px",alignItems:"baseline",marginBottom:4,...F,fontSize:11}}>
+                  <span style={{color:e.oppColor||T.textMid}}>{(e.oppEmoji||"")+" "+(e.opp||"")+" player"}</span>
+                  <span style={{color:T.textDim}}>{"·"}</span>
+                  <span style={{color:isCorrect?T.green:T.red,fontWeight:700}}>{e.action}</span>
+                  {!isCorrect&&<><span style={{color:T.textDim}}>{"→"}</span><span style={{color:T.green,fontWeight:700}}>{e.correct}</span></>}
+                  <span style={{color:T.textDim}}>{"·"}</span>
+                  <span style={{color:e.ev>=0?T.green:T.red,fontWeight:600}}>{(e.ev>=0?"+":"")+e.ev.toFixed(1)+" EV"}</span>
+                </div>
+                {e.narrative&&<div style={{fontSize:11,color:T.textDim,fontStyle:"italic",marginBottom:3,lineHeight:1.5,fontWeight:500}}>{e.narrative}</div>}
+                {e.explanation&&<div style={{fontSize:11,color:T.textMid,lineHeight:1.55,fontWeight:500}}>{e.explanation}</div>}
+              </div>;
+            })}
+          </div>}
           <div style={{display:"flex",gap:8,marginBottom:8}}>
             <button onClick={exportMD} style={{flex:1,padding:12,borderRadius:20,border:"1.5px solid "+T.border,cursor:"pointer",background:copied?T.green+"16":T.panel,color:copied?T.green:T.text,...F,fontSize:13}}>{copied?"✓ Copied MD":"Copy MD"}</button>
             <button onClick={exportCSV} style={{flex:1,padding:12,borderRadius:20,border:"1.5px solid "+T.border,cursor:"pointer",background:csvCopied?T.green+"16":T.panel,color:csvCopied?T.green:T.text,...F,fontSize:13}}>{csvCopied?"✓ Copied CSV":"Copy CSV"}</button>
@@ -1390,13 +1583,22 @@ export default function PokerTrainer(){
               <div style={toggleDot(settings.showPct)}/>
             </button>
           </div>
-          <div style={{...toggleStyle,borderBottom:"none"}}>
+          <div style={toggleStyle}>
             <div>
               <div style={{fontSize:14,color:T.text,...F}}>Show hand strength before decision</div>
               <div style={{fontSize:12,color:T.textDim,fontWeight:500,marginTop:2}}>Shows approximate equity before you act</div>
             </div>
             <button onClick={function(){toggleSetting("showPreEq");}} style={toggleBtn(settings.showPreEq)}>
               <div style={toggleDot(settings.showPreEq)}/>
+            </button>
+          </div>
+          <div style={{...toggleStyle,borderBottom:"none"}}>
+            <div>
+              <div style={{fontSize:14,color:T.text,...F}}>Show hand info in narrative</div>
+              <div style={{fontSize:12,color:T.textDim,fontWeight:500,marginTop:2}}>Appends "You're holding X, plus Y draw." to each scenario</div>
+            </div>
+            <button onClick={function(){toggleSetting("showHandInfo");}} style={toggleBtn(settings.showHandInfo)}>
+              <div style={toggleDot(settings.showHandInfo)}/>
             </button>
           </div>
         </div>
@@ -1437,18 +1639,19 @@ export default function PokerTrainer(){
     }
   }
 
-  return <div style={{minHeight:"100vh",background:T.bg,...F,padding:T.pagePad+"px 16px",display:"flex",flexDirection:"column",alignItems:"center"}}>
+  return <div onClick={function(){setTipState(null);}} style={{minHeight:"100vh",background:T.bg,...F,padding:T.pagePad+"px 16px",display:"flex",flexDirection:"column",alignItems:"center"}}>
     <div style={{width:"100%",maxWidth:T.maxW}}>
 
+      {/* TOOLTIP — Wikipedia-style popup near the term */}
+      {tipState && <div style={{position:"fixed",left:Math.max(16,Math.min(tipState.x,screenW-16)),top:tipState.y,transform:tipState.below?"translateX(-50%)":"translate(-50%,-100%)",maxWidth:Math.min(280,screenW-32),background:"#fff",border:"1px solid "+T.border,borderRadius:10,padding:"10px 14px",fontSize:12,lineHeight:1.55,color:T.text,fontWeight:500,fontFamily:T.font,boxShadow:"0 4px 20px rgba(0,0,0,0.14)",zIndex:200,pointerEvents:"none"}}>{tipState.text}</div>}
+
+
       {/* HEADER */}
-      <div style={{background:T.panel,borderRadius:T.headerR,padding:T.headerPad+"px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,border:"1px solid "+T.border}}>
+      <div style={{background:T.panel,borderRadius:T.headerR,padding:dynHeaderPad+"px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,border:"1px solid "+T.border}}>
         <button onClick={function(){setScreen("menu");}} style={{background:"none",border:"none",color:T.textMid,fontSize:12,cursor:"pointer",...F,padding:0}}>{"◂ MENU"}</button>
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
-          {[3,6].map(function(sz){return <button key={sz} onClick={function(){if(sz!==tableSize){setTableSize(sz);}}} style={{background:tableSize===sz?T.gold+"22":"transparent",border:tableSize===sz?"1px solid "+T.gold:"1px solid transparent",borderRadius:10,padding:"2px 8px",fontSize:10,color:tableSize===sz?T.goldDark:T.textDim,cursor:"pointer",...F}}>{sz}</button>;})}
-        </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span className={evPulse==="green"?"ev-pulse-green":evPulse==="red"?"ev-pulse-red":""} style={{fontSize:T.bankrollFont,fontWeight:800,color:stack>=100?T.goldDark:T.red,fontVariantNumeric:"tabular-nums",lineHeight:1,fontFamily:T.font,display:"inline-block"}}>{stack.toFixed(1)}</span>
-          <Chip size={T.chipHeader}/>
+          <span onMouseEnter={function(e){showTip(e,GLOSSARY["BB_unit"]);}} onMouseLeave={function(){setTipState(null);}} onClick={function(e){showTip(e,GLOSSARY["BB_unit"]);}} style={{cursor:"help"}}><Chip size={T.chipHeader}/></span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:12,color:T.textDim}}>{"#"+handNum}</span>
@@ -1467,7 +1670,9 @@ export default function PokerTrainer(){
             var isOpp=p===scenario.oppPos;
             var col=isOpp?scenario.opp.color:"#3a4e68";
             var bCol=isOpp?scenario.opp.color:"#4a6888";
-            return <div key={p} style={{display:"flex",flexDirection:"column",alignItems:"center",marginTop:-halfSeat}}>
+            var seatGloss=GLOSSARY[p]||"";
+            var seatTip=seatGloss?function(e){e.stopPropagation();showTip(e,seatGloss);}:null;
+            return <div key={p} onClick={seatTip} onMouseEnter={seatTip} onMouseLeave={function(){setTipState(null);}} style={{display:"flex",flexDirection:"column",alignItems:"center",marginTop:-halfSeat,cursor:seatGloss?"help":"default"}}>
               <div style={{width:T.seat,height:T.seat,borderRadius:T.seat/2,background:col,display:"flex",alignItems:"center",justifyContent:"center",fontSize:isOpp?22:14,color:"#e8e4dc",fontWeight:T.weight,border:T.seatBorder+"px solid "+bCol}}>{isOpp?scenario.opp.emoji:"·"}</div>
               <span style={{fontSize:T.seatLabel,fontWeight:T.weight,color:T.pos[p]||T.textDim,marginTop:4}}>{p}</span>
             </div>;
@@ -1504,7 +1709,7 @@ export default function PokerTrainer(){
           {/* Row 2: Board cards or PREFLOP */}
           <div style={{height:T.boardRowH,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             {scenario.board.length>0 ?
-              <div style={{display:"flex",gap:T.bcGap}}>{scenario.board.map(function(c,i){return <CCard key={animKey+"-b"+i} card={c} board={true} animDelay={i*60}/>;})}</div>
+              <div style={{display:"flex",gap:T.bcGap}}>{scenario.board.map(function(c,i){return <CCard key={animKey+"-b"+i} card={c} board={true} animDelay={i*60} bcW={dynBcW} bcH={dynBcH} bcRank={dynBcRank} bcSuit={dynBcSuit}/>;})}</div>
             :
               <span style={{color:"#ffffffcc",fontSize:40,fontWeight:T.weight,letterSpacing:"0.15em",position:"relative",top:"-10px"}}>PREFLOP</span>
             }
@@ -1521,26 +1726,34 @@ export default function PokerTrainer(){
         </div>
 
         {/* YOU seat */}
-        <div style={{position:"absolute",bottom:0,left:"50%",transform:"translateX(-50%)",display:"flex",flexDirection:"column",alignItems:"center",marginBottom:-45,zIndex:2}}>
-          <div style={{width:T.seat,height:T.seat,borderRadius:T.seat/2,background:T.gold,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"#fff",fontWeight:800,border:T.seatBorder+"px solid "+T.goldDark}}>YOU</div>
-          <span style={{fontSize:T.seatLabel,fontWeight:T.weight,color:T.pos[scenario.pos]||T.gold,marginTop:4}}>{scenario.pos}</span>
-        </div>
+        {(function(){
+          var youGloss=GLOSSARY[scenario.pos]||"";
+          var youTip=youGloss?function(e){e.stopPropagation();showTip(e,youGloss);}:null;
+          return <div onClick={youTip} onMouseEnter={youTip} onMouseLeave={function(){setTipState(null);}} style={{position:"absolute",bottom:0,left:"50%",transform:"translateX(-50%)",display:"flex",flexDirection:"column",alignItems:"center",marginBottom:-45,zIndex:2,cursor:youGloss?"help":"default"}}>
+            <div style={{width:T.seat,height:T.seat,borderRadius:T.seat/2,background:T.gold,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"#fff",fontWeight:800,border:T.seatBorder+"px solid "+T.goldDark}}>YOU</div>
+            <span style={{fontSize:T.seatLabel,fontWeight:T.weight,color:T.pos[scenario.pos]||T.gold,marginTop:4}}>{scenario.pos}</span>
+          </div>;
+        })()}
 
       </div>
 
       {/* NARRATIVE */}
-      <div style={{height:T.narrH,background:T.panel,borderRadius:T.narrR,border:"1px solid "+T.border,marginBottom:T.gapNarrToHand,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div onClick={function(){setTipState(null);}} style={{height:dynNarrH,background:T.panel,borderRadius:T.narrR,border:"1px solid "+T.border,marginBottom:T.gapNarrToHand,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         <div style={{flex:"1 1 auto",padding:"14px 18px",fontSize:T.narrFont,lineHeight:T.narrLineH,color:T.text,fontWeight:600,fontFamily:T.font,overflowY:"auto"}}>
           {phase==="action" ? <div>{(function(){
             var pN=scenario.pos,oE=scenario.opp.emoji,oN=scenario.opp.name;
-            var oD=scenario.opp.id==="tight"?"who plays tight — mostly strong hands":scenario.opp.id==="aggro"?"who plays loose and bluffs often":"who plays a balanced, standard game";
             var oP=scenario.oppPos;
+            // Clickable opponent name with tooltip
+            var oppGloss=GLOSSARY[oN]||"";
+            var oppSpan=<span onMouseEnter={oppGloss?function(e){showTip(e,oppGloss);}:null} onMouseLeave={function(){setTipState(null);}} onClick={oppGloss?function(e){e.stopPropagation();showTip(e,oppGloss);}:null} style={{color:scenario.opp.color,fontWeight:T.weight,cursor:oppGloss?"help":"default"}}>{oE+" "+oN+" player"}</span>;
             var hI="";
-            if(scenario.board.length>0){
-              var info=classify(scenario.playerHand,scenario.board);
-              var dt=(!isR&&info.draws.length>0)?", plus "+info.draws.map(function(d){return d.desc;}).join(" and "):"";
-              hI=" You're holding "+info.handDesc.toLowerCase()+dt+".";
-            }else{hI=" You're holding "+nota+".";}
+            if(settings.showHandInfo){
+              if(scenario.board.length>0){
+                var info=classify(scenario.playerHand,scenario.board);
+                var dt=(!isR&&info.draws.length>0)?", plus "+info.draws.map(function(d){return d.desc;}).join(" and "):"";
+                hI=" You're holding "+info.handDesc.toLowerCase()+dt+".";
+              }else{hI=" You're holding "+nota+".";}
+            }
 
             // Pre-decision equity hint
             var preEqLine=null;
@@ -1550,30 +1763,28 @@ export default function PokerTrainer(){
               preEqLine=<div style={{fontSize:12,color:T.textDim,marginTop:6,fontWeight:500,fontStyle:"italic"}}>{"Hand strength: ~"+pEq+"% vs estimated range"}</div>;
             }
 
-            // Preflop narratives (unchanged logic)
+            // Preflop narratives — clean position descriptions
             if(scenario.street==="preflop"){
-              if(scenario.preflopSit==="vs_raise")return <span>{"You're at "}<PB pos={pN}/>{". A "}<span style={{color:scenario.opp.color,fontWeight:T.weight}}>{oE+" "+oN}</span>{" player "+oD+" raises to "}<BV value={2.5} fs={14} color={T.goldDark} cs={16}/>{" from "}<PB pos={oP}/>{"."}{hI}</span>;
-              return <span>{scenario.pos==="UTG"?"You're first to act at ":"It folds to you at "}<PB pos={pN}/>{". A "}<span style={{color:scenario.opp.color,fontWeight:T.weight}}>{oE+" "+oN}</span>{" player "+oD+" sits at "}<PB pos={oP}/>{"."}{hI}</span>;
+              if(scenario.preflopSit==="vs_raise")return <span>{oppSpan}{" raises to "}<BV value={2.5} fs={14} color={T.goldDark} cs={16}/>{" from "}<PB pos={oP} showTip={showTip}/>{". You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}</span>;
+              return <span>{"You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}</span>;
             }
 
-            // Post-flop narratives — position-aware
-            var sn=SN[scenario.street].toLowerCase();
+            // Post-flop narratives
             var sit=scenario.postflopSit;
 
             if(sit==="ip_vs_bet"){
-              return <span>{"It's the "}<span style={{color:T.goldDark,fontWeight:T.weight}}>{sn}</span>{". You're at "}<PB pos={pN}/>{". The "}<span style={{color:scenario.opp.color,fontWeight:T.weight}}>{oE+" "+oN}</span>{" player "+oD+" at "}<PB pos={oP}/>{" bets "}<BV value={scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" into a "}<BV value={scenario.potSize-scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" pot."}{hI}{preEqLine}</span>;
+              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/>{" bets "}<BV value={scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" into a "}<BV value={scenario.potSize-scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" pot. You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}{preEqLine}</span>;
             }
             if(sit==="ip_vs_check"){
-              return <span>{"It's the "}<span style={{color:T.goldDark,fontWeight:T.weight}}>{sn}</span>{". The "}<span style={{color:scenario.opp.color,fontWeight:T.weight}}>{oE+" "+oN}</span>{" player "+oD+" at "}<PB pos={oP}/>{" checks to you and you close the action at "}<PB pos={pN}/>{"."}{hI}{preEqLine}</span>;
+              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/>{" checks. You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}{preEqLine}</span>;
             }
             if(sit==="oop_first_to_act"){
-              return <span>{"It's the "}<span style={{color:T.goldDark,fontWeight:T.weight}}>{sn}</span>{". You're first to act at "}<PB pos={pN}/>{". A "}<span style={{color:scenario.opp.color,fontWeight:T.weight}}>{oE+" "+oN}</span>{" player "+oD+" sits at "}<PB pos={oP}/>{"."}{hI}{preEqLine}</span>;
+              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". You act first at "}<PB pos={pN} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/>{" acts after you."}{hI}{preEqLine}</span>;
             }
             if(sit==="oop_check_then_opp_bets"){
-              return <span>{"It's the "}<span style={{color:T.goldDark,fontWeight:T.weight}}>{sn}</span>{". You checked at "}<PB pos={pN}/>{", and the "}<span style={{color:scenario.opp.color,fontWeight:T.weight}}>{oE+" "+oN}</span>{" player "+oD+" at "}<PB pos={oP}/>{" bets "}<BV value={scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" into a "}<BV value={scenario.potSize-scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" pot."}{hI}{preEqLine}</span>;
+              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". You checked at "}<PB pos={pN} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/>{" bets "}<BV value={scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" into a "}<BV value={scenario.potSize-scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" pot."}{hI}{preEqLine}</span>;
             }
-            // Fallback (shouldn't hit)
-            return <span>{"It's the "}<span style={{color:T.goldDark,fontWeight:T.weight}}>{sn}</span>{". You're at "}<PB pos={pN}/>{"."}{hI}</span>;
+            return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}</span>;
           })()}</div>
           : <>
             <div className="badge-anim" style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -1583,7 +1794,7 @@ export default function PokerTrainer(){
               {feedback.evDiff!==0 && <span style={{fontWeight:T.weight,fontSize:14,color:feedback.evDiff>=0?T.green:T.red}}>{(feedback.evDiff>=0?"+":"")+feedback.evDiff.toFixed(1)+" EV"}</span>}
             </div>
             {feedback.rating!=="green" && <div className="fb-anim" style={{fontSize:14,color:T.goldDark,fontWeight:T.weight,marginBottom:6}}>{"Best: "+feedback.best}</div>}
-            <div className="fb-anim" style={{fontSize:13.5,lineHeight:1.7,fontWeight:500,animationDelay:"80ms"}}><NT text={feedback.explanation}/></div>
+            <div className="fb-anim" style={{fontSize:13.5,lineHeight:1.7,fontWeight:500,animationDelay:"80ms"}}><NT text={feedback.explanation} showTip={showTip}/></div>
           </>}
         </div>
       </div>
@@ -1591,7 +1802,7 @@ export default function PokerTrainer(){
       {/* HAND + ACTIONS */}
       <div style={{display:"flex",gap:T.cardGap,width:"100%",alignItems:"flex-start"}}>
         <div style={{flex:"0 0 "+T.cardSplit*100+"%",display:"flex",gap:T.cardGap,justifyContent:"center"}}>
-          {dh.map(function(c,i){return <CCard key={animKey+"-h"+i} card={c} animDelay={200+i*80}/>;})}
+          {dh.map(function(c,i){return <CCard key={animKey+"-h"+i} card={c} animDelay={200+i*80} cardW={dynCardW} cardH={dynCardH} cardRank={dynCardRank} cardSuit={dynCardSuit}/>;})}
         </div>
         <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
           {phase==="action" ? actions.map(function(a){
