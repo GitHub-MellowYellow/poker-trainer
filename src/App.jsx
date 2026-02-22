@@ -1,1150 +1,25 @@
+// ═══════════════════════════════════════════════════════════════
+// POKER TRAINER
+//
+// Not a GTO solver. Not a math lecture. Think of this as chess
+// puzzles for poker — quick, snappy scenarios that build real
+// intuition for beginners and intermediate players. Each hand
+// teaches a concept through instant feedback and plain-English
+// explanations. No solvers, no ranges grids, no equity trees.
+// Just reps. Play a hand, get a read, get better.
+// ═══════════════════════════════════════════════════════════════
+
 import { useState, useCallback, useRef, useEffect } from "react";
-
-// ═══════════════════════════════════════════════════════════════
-// DESIGN TOKENS
-// ═══════════════════════════════════════════════════════════════
-
-const T = {
-  font: "Helvetica, Arial, sans-serif",
-  weight: 700,
-  maxW: 480,
-  pagePad: 14,
-
-  bg: "#f0e8d8",
-  panel: "#faf6ee",
-  table: "#2b3a52",
-  tableBorder: "#3a506a",
-  gold: "#c49a2a",
-  goldDark: "#a67e18",
-  text: "#2b2b24",
-  textMid: "#5c5a50",
-  textDim: "#8a8878",
-  cream: "#faf6ee",
-  creamBorder: "#e8e0d0",
-  border: "#d8d0c0",
-  green: "#4a8a5a",
-  red: "#b84a3a",
-
-  spade: "#2a6aaa",
-  heart: "#c0443a",
-  diamond: "#d4882a",
-  club: "#2a7a5a",
-
-  pos: { UTG:"#c0553a", MP:"#d48a2a", CO:"#3a8a7a", BTN:"#c49a2a", SB:"#2a6aaa", BB:"#9a5a8a" },
-  oppTight: "#3a7a9a",
-  oppNeutral: "#6b7b6b",
-  oppAggro: "#c0553a",
-
-  headerPad: 18,
-  headerR: 14,
-  bankrollFont: 34,
-
-  gapToTable: 36,
-  gapNarrToHand: 14,
-
-  tableR: 55,
-  tablePadX: 24,
-  betRowH: 36,
-  boardRowH: 100,
-  potRowH: 36,
-  innerGap: 12,
-  tableTopPad: 50,
-  tableBotPad: 45,
-
-  seat: 52,
-  seatBorder: 3,
-  seatLabel: 12,
-
-  bcW: 72,
-  bcH: 100,
-  bcR: 8,
-  bcRank: 48,
-  bcSuit: 22,
-  bcGap: 7,
-
-  cardH: 196,
-  cardW: 140,
-  cardR: 10,
-  cardRank: 100,
-  cardRank10: 100,
-  cardSuit: 34,
-  cardSplit: 0.63,
-  cardGap: 10,
-
-  btnR: 16,
-  btnPadY: 11,
-  btnFont: 13,
-
-  narrH: 220,
-  narrR: 12,
-  narrFont: 15,
-  narrLineH: 1.75,
-
-  chip: 28,
-  chipHeader: 34,
-  chipPot: 22,
-  chipInline: 18,
-
-  pillR: 20,
-  pillPX: 18,
-  pillPY: 6,
-  potFont: 19,
-  betFont: 16,
-};
+import { T, SC, P6, P3, SN, GLOSSARY, OPP } from "./poker-data.js";
+import {
+  shuffle, mkDeck, cstr, hn, sortH,
+  classify, genScenario, evalPre, evalPost,
+  debugRun, debugToCSV, debugSummary,
+  loadLocal, saveLocal, loadSettings, saveSettings,
+  encodeSeed, decodeSeed,
+} from "./poker-engine.js";
 
 var TABLE_H = T.tableTopPad + T.betRowH + T.innerGap + T.boardRowH + T.innerGap + T.potRowH + T.tableBotPad;
-
-var SC = {};
-SC["♠"] = T.spade;
-SC["♥"] = T.heart;
-SC["♦"] = T.diamond;
-SC["♣"] = T.club;
-
-var SUITS = ["♠","♥","♦","♣"];
-var RANKS = ["2","3","4","5","6","7","8","9","T","J","Q","K","A"];
-var RV = {2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,T:10,J:11,Q:12,K:13,A:14};
-var RD = {T:"10",J:"J",Q:"Q",K:"K",A:"A"};
-var RN = {2:"deuce",3:"three",4:"four",5:"five",6:"six",7:"seven",8:"eight",9:"nine",T:"ten",J:"jack",Q:"queen",K:"king",A:"ace"};
-var P6 = ["UTG","MP","CO","BTN","SB","BB"];
-var P3 = ["BTN","SB","BB"];
-var SN = { preflop:"Preflop", flop:"Flop", turn:"Turn", river:"River" };
-
-// Post-flop acting order (lower index = acts first = OOP)
-var POSTFLOP_ORDER = { SB:0, BB:1, UTG:2, MP:3, CO:4, BTN:5 };
-
-var OPP = [
-  { id:"tight", name:"Careful", emoji:"🛡️", color:T.oppTight },
-  { id:"neutral", name:"Regular", emoji:"⚖️", color:T.oppNeutral },
-  { id:"aggro", name:"Aggro", emoji:"🔥", color:T.oppAggro },
-];
-
-// ═══════════════════════════════════════════════════════════════
-// GLOSSARY — beginner-friendly tooltip definitions
-// ═══════════════════════════════════════════════════════════════
-
-var GLOSSARY = {
-  "Careful": "💡 The 'Rock.' This player only plays premium hands. If they are betting, they aren't kidding—they have something strong.",
-  "Regular": "💡 A disciplined strategist. They play a balanced game, mixing strong hands with calculated bluffs to keep you guessing.",
-  "Aggro": "💡 A high-pressure player who uses chips as a weapon. They win by making you uncomfortable enough to fold.",
-  "UTG": "💡 Under the Gun. First to act with the whole table waiting to pounce. You need a powerhouse hand to survive crossfire.",
-  "MP": "💡 Middle Position. Not good, not terrible. You need strong hands to have a chance since the best seats act after you.",
-  "CO": "💡 Cut-Off. A prime seat to 'steal' the pot before the dealer gets a chance. Only two players left to act after you.",
-  "BTN": "💡 The Button. The best seat in the house. You act last, getting a free look at everyone's moves before you make yours.",
-  "SB": "💡 Small Blind. A forced bet in a tough spot. You act first after the flop, making it an uphill battle to win the hand.",
-  "BB": "💡 Big Blind. Forced bet. You get a 'discount' to see the flop, but you'll be defending your territory from a difficult position later.",
-  "BB_unit": "💡 The currency of poker strategy. It measures your stack size relative to the stakes rather than the dollar amount.",
-  "preflop": "💡 The opening act. You only know your two private cards and the strength of your position.",
-  "flop": "💡 The first three shared cards. This is where most hands are won, lost, or defined.",
-  "turn": "💡 The fourth shared card. The plot thickens and the price of staying in the hand usually goes up.",
-  "river": "💡 The fifth and final card. No more help is coming—it's time for the moment of truth.",
-  "overpair": "💡 Your pocket pair is higher than any card on the board. A strong hand, but watch out for 'wet' boards.",
-  "top pair": "💡 You paired the highest card on the table. A reliable hand, though its strength depends on your second card (the kicker).",
-  "middle pair": "💡 One of your cards matches a middle card on the board. Vulnerable to anyone with the top pair; proceed with caution.",
-  "bottom pair": "💡 You paired the lowest card on the table. Often a 'fold' waiting to happen unless you're catching a bluff.",
-  "two pair": "💡 Strong if both pairs come from your hole cards, but riskier if one pair is shared by everyone on the board.",
-  "three of a kind": "💡 A powerhouse hand that often stays hidden, ready to trap over-confident opponents.",
-  "full house": "💡 Three of a kind plus a pair. A near-invincible hand that usually takes down the entire pot.",
-  "flush": "💡 Five cards of the same suit. Strong and hard to beat, unless the board shows a pair for a possible full house.",
-  "straight": "💡 Five cards in numerical order. A deceptive hand that can crush players holding high pairs.",
-  "underpair": "💡 Your pocket pair is lower than everything on the board. You're looking for a miracle or a quick exit.",
-  "ace high": "💡 No pair, just an Ace. Sometimes enough to win against a total bluff, but rarely enough to bet on.",
-  "overcards": "💡 No pair yet, but both your cards are higher than the board. You’re looking for a lucky catch on the next street.",
-  "pocket pair": "💡 Two of the same card in your hand. A head start that can turn into a monster if you hit a third matching card.",
-  "high card": "💡 The weakest possible hand. If you're here at the river, you're either bluffing or losing.",
-  "flush draw": "💡 You have four cards of one suit and need one more. You have a ~35% chance to hit by the river.",
-  "straight draw": "💡 You’re one card short of a straight. A work-in-progress hand that needs the right card to become profitable.",
-  "open-ended": "💡 Four cards in a row that can be completed at either end. With 8 possible 'outs,' you have a solid chance at glory.",
-  "OESD": "💡 Open-Ended Straight Draw. You have 8 cards in the deck that can complete your hand. One of the best draws to have.",
-  "gutshot": "💡 An 'inside' straight draw. You need one specific middle card to hit. A long shot, but it hits like a bolt of lightning.",
-  "semi-bluff": "💡 Betting with a weak hand that has potential. You win by forcing a fold now or hitting your card later.",
-  "bluff-catcher": "💡 A hand that can't beat a serious bet but crushes a lie. You’re playing a game of 'I don't believe you.'",
-  "pot odds": "💡 The price of the 'call' versus the size of the prize. Tells you if your draw is a smart investment or a bad gamble.",
-  "+EV": "💡 Positive Expected Value. A move that makes money over the long run, even if this specific hand ends in disaster.",
-  "value": "💡 Betting because you want to get paid. You believe you have the best hand and want the opponent to call with worse.",
-  "profitable": "💡 A play that consistently adds to your stack over hundreds of sessions.",
-  "Wet board": "💡 Coordinated cards where straights and flushes are lurking. Your strong hand might need an umbrella.",
-  "Dry board": "💡 Disconnected and safe. If you have the best hand now, you’ll likely have it on the river.",
-  "Mixed board": "💡 Between wet and dry—some draws are possible, but the board isn't a total minefield yet.",
-  "Fold": "💡 Releasing your cards. The most important move in poker—it saves you from losing chips you don't have to.",
-  "Call": "💡 Matching the current bet. You’re paying to see the next card or to reach the showdown.",
-  "Raise": "💡 Increasing the price of admission. It forces your opponents to have a real hand or get out of the way.",
-  "3-Bet": "💡 The first re-raise. It turns up the heat to build a pot with strong hands, seize control of the action, or pressure a weak raiser into folding.",
-  "Check": "💡 A tactical pass. Use it to see a free card or to set a trap for an aggressive opponent.",
-  "Bet": "💡 Being the first to put chips in. It takes the lead and puts the pressure on everyone else.",
-};
-
-// ═══════════════════════════════════════════════════════════════
-// PREFLOP RANGES
-// ═══════════════════════════════════════════════════════════════
-
-var OPEN = {
-  UTG: new Set(["AA","KK","QQ","JJ","TT","99","88","77","AKs","AQs","AJs","ATs","A5s","A4s","AKo","AQo","KQs","KJs","KTs","QJs","QTs","JTs","T9s","98s"]),
-  MP: new Set(["AA","KK","QQ","JJ","TT","99","88","77","66","AKs","AQs","AJs","ATs","A9s","A5s","A4s","A3s","AKo","AQo","AJo","KQs","KJs","KTs","K9s","QJs","QTs","Q9s","JTs","J9s","T9s","98s","87s"]),
-  CO: new Set(["AA","KK","QQ","JJ","TT","99","88","77","66","55","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","KQs","KJs","KTs","K9s","K8s","K7s","KQo","KJo","KTo","QJs","QTs","Q9s","Q8s","QJo","QTo","JTs","J9s","J8s","JTo","T9s","T8s","98s","97s","87s","76s","65s"]),
-  BTN: new Set(["AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","A8o","A7o","KQs","KJs","KTs","K9s","K8s","K7s","K6s","K5s","KQo","KJo","KTo","K9o","QJs","QTs","Q9s","Q8s","Q7s","QJo","QTo","JTs","J9s","J8s","J7s","JTo","T9s","T8s","T7s","98s","97s","96s","87s","86s","76s","75s","65s","64s","54s"]),
-  SB: new Set(["AA","KK","QQ","JJ","TT","99","88","77","66","55","AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s","AKo","AQo","AJo","ATo","A9o","KQs","KJs","KTs","K9s","K8s","KQo","KJo","KTo","QJs","QTs","Q9s","QJo","JTs","J9s","T9s","98s","87s"]),
-};
-var BB_VS = { threebet: new Set(["AA","KK","QQ","JJ","AKs","AKo","AQs","A5s","A4s"]), call: new Set(["TT","99","88","77","66","55","44","33","22","AJs","ATs","A9s","A8s","A7s","A6s","A3s","A2s","AQo","AJo","KQs","KJs","KTs","K9s","KQo","QJs","QTs","Q9s","JTs","J9s","T9s","T8s","98s","97s","87s","76s","65s","54s"]) };
-var SB_VS = { threebet: new Set(["AA","KK","QQ","JJ","TT","AKs","AKo","AQs","AJs"]), call: new Set(["99","88","77","ATs","A9s","AQo","KQs","KJs","QJs","JTs","T9s"]) };
-
-// ═══════════════════════════════════════════════════════════════
-// UTILS
-// ═══════════════════════════════════════════════════════════════
-
-function shuffle(a){var r=a.slice();for(var i=r.length-1;i>0;i--){var j=0|Math.random()*(i+1);var t=r[i];r[i]=r[j];r[j]=t;}return r;}
-function mkDeck(){var d=[];for(var i=0;i<SUITS.length;i++)for(var j=0;j<RANKS.length;j++)d.push({rank:RANKS[j],suit:SUITS[i]});return d;}
-function cstr(c){return(RD[c.rank]||c.rank)+c.suit;}
-function hn(c1,c2){var v1=RV[c1.rank],v2=RV[c2.rank];var hi=v1>=v2?c1:c2,lo=v1>=v2?c2:c1;if(hi.rank===lo.rank)return hi.rank+lo.rank;return hi.rank+lo.rank+(hi.suit===lo.suit?"s":"o");}
-function sortH(h){return h.slice().sort(function(a,b){return RV[b.rank]-RV[a.rank];});}
-
-// ═══════════════════════════════════════════════════════════════
-// HAND EVALUATOR
-// ═══════════════════════════════════════════════════════════════
-
-function combos(arr,k){if(k===0)return[[]];if(arr.length<k)return[];var f=arr[0],r=arr.slice(1);return combos(r,k-1).map(function(c){return[f].concat(c);}).concat(combos(r,k));}
-
-function eval5(cards){
-  var vals=cards.map(function(c){return RV[c.rank];}).sort(function(a,b){return b-a;});
-  var suits=cards.map(function(c){return c.suit;});
-  var fl=suits.every(function(s){return s===suits[0];});
-  var st=false,sh=0;
-  var uSet={};vals.forEach(function(v){uSet[v]=1;});var u=Object.keys(uSet).map(Number).sort(function(a,b){return b-a;});
-  if(u.length===5&&u[0]-u[4]===4){st=true;sh=u[0];}
-  if(u.length===5&&u[0]===14&&u[1]===5&&u[2]===4&&u[3]===3&&u[4]===2){st=true;sh=5;}
-  var freq={};vals.forEach(function(v){freq[v]=(freq[v]||0)+1;});
-  var g=Object.keys(freq).map(function(v){return{v:+v,c:freq[v]};}).sort(function(a,b){return b.c-a.c||b.v-a.v;});
-  var S=function(r,s){return r*1e10+s;};
-  if(fl&&st)return sh===14?{rank:9,name:"Royal Flush",score:S(9,14)}:{rank:8,name:"Straight Flush",score:S(8,sh)};
-  if(g[0].c===4)return{rank:7,name:"Four of a Kind",score:S(7,g[0].v*100+g[1].v)};
-  if(g[0].c===3&&g.length>1&&g[1].c===2)return{rank:6,name:"Full House",score:S(6,g[0].v*100+g[1].v)};
-  if(fl)return{rank:5,name:"Flush",score:S(5,vals[0]*1e8+vals[1]*1e6+vals[2]*1e4+vals[3]*100+vals[4])};
-  if(st)return{rank:4,name:"Straight",score:S(4,sh)};
-  if(g[0].c===3)return{rank:3,name:"Three of a Kind",score:S(3,g[0].v*1e4+(g.length>1?g[1].v:0)*100+(g.length>2?g[2].v:0))};
-  if(g[0].c===2&&g.length>1&&g[1].c===2){var hi=Math.max(g[0].v,g[1].v),lo=Math.min(g[0].v,g[1].v);return{rank:2,name:"Two Pair",score:S(2,hi*1e4+lo*100+(g.length>2?g[2].v:0))};}
-  if(g[0].c===2)return{rank:1,name:"Pair",score:S(1,g[0].v*1e6+(g.length>1?g[1].v:0)*1e4+(g.length>2?g[2].v:0)*100+(g.length>3?g[3].v:0))};
-  return{rank:0,name:"High Card",score:S(0,vals[0]*1e8+vals[1]*1e6+vals[2]*1e4+vals[3]*100+vals[4])};
-}
-
-function evalH(cards){
-  if(cards.length<5)return{rank:-1,name:"--",score:-1};
-  var c=combos(cards,5);var b={rank:-1,score:-1};
-  for(var i=0;i<c.length;i++){var e=eval5(c[i]);if(e.score>b.score)b=e;}
-  return b;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// DRAWS
-// ═══════════════════════════════════════════════════════════════
-
-function detectDraws(hole,board){
-  var all=hole.concat(board);var dr=[];
-  var hv=hole.map(function(c){return RV[c.rank];});
-  var hs=hole.map(function(c){return c.suit;});
-  var sc={};all.forEach(function(c){sc[c.suit]=(sc[c.suit]||0)+1;});
-  Object.keys(sc).forEach(function(s){if(sc[s]===4&&hs.indexOf(s)!==-1)dr.push({type:"flush draw",outs:9,desc:"flush draw"});});
-  var avSet={};all.forEach(function(c){avSet[RV[c.rank]]=1;});var av=Object.keys(avSet).map(Number);
-  if(av.indexOf(14)!==-1)av.push(1);av.sort(function(a,b){return a-b;});
-  var best=null;
-  for(var s=1;s<=10;s++){
-    var w=[];for(var v=s;v<s+5;v++)if(av.indexOf(v)!==-1)w.push(v);
-    if(w.length===4){
-      var hc=hv.some(function(v){return w.indexOf(v)!==-1;})||(hv.indexOf(14)!==-1&&w.indexOf(1)!==-1);
-      if(!hc)continue;
-      var f=[s,s+1,s+2,s+3,s+4];var m=f.filter(function(v){return av.indexOf(v)===-1;});
-      if(m.length===1){if(m[0]===s||m[0]===s+4){if(!best||best.type!=="OESD")best={type:"OESD",outs:8,desc:"open-ended straight draw"};}else{if(!best)best={type:"gutshot",outs:4,desc:"gutshot straight draw"};}}
-    }
-  }
-  if(best)dr.push(best);return dr;
-}
-
-function totalOuts(dr){if(!dr.length)return 0;var t=0;for(var i=0;i<dr.length;i++)t+=dr[i].outs;if(dr.some(function(d){return d.type==="flush draw";})&&dr.some(function(d){return d.type==="OESD"||d.type==="gutshot";}))t-=2;return Math.max(t,0);}
-function outsEq(outs,st){if(st==="flop")return Math.min(outs*4-Math.max(outs-8,0),80)/100;return Math.min(outs*2,50)/100;}
-function potOdds(pot,bet){return bet<=0?0:bet/(pot+bet);}
-
-// ═══════════════════════════════════════════════════════════════
-// BOARD TEXTURE ANALYSIS
-// ═══════════════════════════════════════════════════════════════
-
-function analyzeBoard(board){
-  if(!board||board.length===0)return{texture:"none",desc:""};
-  var bv=board.map(function(c){return RV[c.rank];}).sort(function(a,b){return b-a;});
-  var bs=board.map(function(c){return c.suit;});
-
-  // Flush potential: count max same suit
-  var suitCounts={};bs.forEach(function(s){suitCounts[s]=(suitCounts[s]||0)+1;});
-  var maxSuit=Math.max.apply(null,Object.values(suitCounts));
-  var flushDraw=maxSuit>=3;
-  var monotone=maxSuit>=4||(board.length===3&&maxSuit===3);
-
-  // Straight potential: count consecutive/near cards
-  var unique=[];var seen={};bv.forEach(function(v){if(!seen[v]){unique.push(v);seen[v]=1;}});
-  unique.sort(function(a,b){return a-b;});
-  if(seen[14])unique.unshift(1);
-  var maxConn=1,cur=1;
-  for(var i=1;i<unique.length;i++){
-    if(unique[i]-unique[i-1]<=2)cur++;else cur=1;
-    if(cur>maxConn)maxConn=cur;
-  }
-  var connected=maxConn>=3;
-
-  // Paired board
-  var rankCounts={};bv.forEach(function(v){rankCounts[v]=(rankCounts[v]||0)+1;});
-  var paired=Object.values(rankCounts).some(function(c){return c>=2;});
-
-  // High cards on board
-  var highCards=bv.filter(function(v){return v>=10;}).length;
-  var highBoard=highCards>=2;
-
-  // Determine texture
-  var wetFactors=0;
-  if(flushDraw)wetFactors+=2;
-  if(monotone)wetFactors+=1;
-  if(connected)wetFactors+=2;
-  if(highBoard)wetFactors+=1;
-  if(paired)wetFactors-=1;
-
-  var texture,desc;
-  if(wetFactors>=3){
-    texture="wet";
-    var reasons=[];
-    if(monotone)reasons.push("monotone suits");
-    else if(flushDraw)reasons.push("flush possible");
-    if(connected)reasons.push("connected cards");
-    if(highBoard)reasons.push("high cards");
-    desc="Wet board ("+reasons.join(", ")+") — many draws possible, strong hands vulnerable to being outdrawn.";
-  }else if(wetFactors<=0){
-    texture="dry";
-    var reasons2=[];
-    if(paired)reasons2.push("paired");
-    if(!connected)reasons2.push("disconnected");
-    if(!flushDraw)reasons2.push("rainbow");
-    desc="Dry board ("+reasons2.join(", ")+") — few draws available, made hands are more stable.";
-  }else{
-    texture="medium";
-    desc="Mixed board texture — some draws possible but not highly coordinated.";
-  }
-  return{texture:texture,desc:desc,flushDraw:flushDraw,monotone:monotone,connected:connected,paired:paired,highBoard:highBoard};
-}
-
-// ═══════════════════════════════════════════════════════════════
-// CLASSIFY HAND STRENGTH
-// ═══════════════════════════════════════════════════════════════
-
-function classify(hole,board){
-  var all=hole.concat(board);var ev=evalH(all);
-  var bv=board.map(function(c){return RV[c.rank];}).sort(function(a,b){return b-a;});
-  var hv=hole.map(function(c){return RV[c.rank];}).sort(function(a,b){return b-a;});
-  var dr=detectDraws(hole,board);var dO=totalOuts(dr);
-  var cat="trash",str=0,desc=ev.name;
-
-  if(ev.rank>=4){
-    var be=board.length>=5?evalH(board):{rank:-1};
-    if(be.rank>=ev.rank){cat="marginal";str=0.25;desc=ev.name+" (mostly on board)";}
-    else{cat="monster";str=0.85+ev.rank*0.015;}
-  }else if(ev.rank===3){cat="strong";str=0.65;desc="Three of a Kind";}
-  else if(ev.rank===2){
-    // Check whether hole cards contribute to the pairs
-    var af2={};all.forEach(function(c){var v=RV[c.rank];af2[v]=(af2[v]||0)+1;});
-    var pairVals2=[];Object.keys(af2).forEach(function(k){if(af2[k]>=2)pairVals2.push(+k);});
-    pairVals2.sort(function(a,b){return b-a;});
-    var holePairs2=pairVals2.filter(function(pv){return hv[0]===pv||hv[1]===pv;});
-    if(holePairs2.length===0){
-      // Both pairs on board — player is just playing the board
-      var kick2=Math.max(hv[0],hv[1]);
-      if(kick2>=13){var kr2=kick2===RV[hole[0].rank]?hole[0].rank:hole[1].rank;cat="marginal";str=0.25;desc="Two Pair (on board, "+RN[kr2]+" kicker)";}
-      else{cat="trash";str=0.1;desc="Two Pair (on board)";}
-    }else{
-      var bestHP=Math.max.apply(null,holePairs2);
-      if(bestHP>=bv[0]){cat="good";str=0.55;desc="Two Pair";}
-      else if(bestHP>=bv[Math.min(1,bv.length-1)]){cat="good";str=0.45;desc="Two Pair";}
-      else{cat="marginal";str=0.35;desc="Two Pair (weak)";}
-    }
-  }
-  else if(ev.rank===1){
-    var af={};all.forEach(function(c){var v=RV[c.rank];af[v]=(af[v]||0)+1;});
-    var pv=0;Object.keys(af).forEach(function(k){if(af[k]===2)pv=+k;});
-    var bf={};bv.forEach(function(v){bf[v]=(bf[v]||0)+1;});
-    var bp=Object.values(bf).some(function(c){return c>=2;});
-    if(bp&&hv.indexOf(pv)===-1){var kick=Math.max(hv[0],hv[1]);cat="trash";str=0.1;desc=kick>=13?"Pair on board, "+RN[kick===hv[0]?hole[0].rank:hole[1].rank]+" kicker":"Pair on board";}
-    else if(hv[0]===hv[1]&&hv[0]>bv[0]){cat="strong";str=0.55;desc="Overpair ("+RN[hole[0].rank]+"s)";}
-    else if(hv[0]===hv[1]){if(hv[0]>=bv[bv.length-1]){cat="marginal";str=0.22;desc="Pocket pair below top card";}else{cat="weak";str=0.15;desc="Low pocket pair (underpair)";}}
-    else if(pv===bv[0]&&hv.indexOf(pv)!==-1){var k=hv[0]!==pv?hv[0]:hv[1];if(k>=11){cat="good";str=0.45;desc="Top pair, strong kicker";}else if(k>=8){cat="marginal";str=0.32;desc="Top pair, medium kicker";}else{cat="marginal";str=0.28;desc="Top pair, weak kicker";}}
-    else if(hv.indexOf(pv)!==-1){if(bv.length>=2&&pv===bv[1]){cat="weak";str=0.2;desc="Middle pair";}else{cat="weak";str=0.14;desc="Bottom pair";}}
-    else{cat="trash";str=0.1;desc="Board pair (no connection)";}
-  }else{
-    if(hv[0]===14){cat="weak";str=0.12;desc="Ace high";}
-    else if(hv[0]>bv[0]&&hv[1]>bv[0]){cat="weak";str=0.1;desc="Overcards";}
-    else if(hv[0]>bv[0]){cat="trash";str=0.08;desc="One overcard";}
-    else{cat="trash";str=0.06;desc="Nothing";}
-  }
-
-  var db=0;
-  if(dr.some(function(d){return d.type==="flush draw";}))db+=0.12;
-  if(dr.some(function(d){return d.type==="OESD";}))db+=0.10;
-  if(dr.some(function(d){return d.type==="gutshot";}))db+=0.05;
-  var boardTex=analyzeBoard(board);
-  return{category:cat,strength:Math.min(str+db,1),handDesc:desc,draws:dr,drawOuts:dO,ev:ev,holeVals:hv,boardVals:bv,boardTexture:boardTex};
-}
-
-// ═══════════════════════════════════════════════════════════════
-// POSITION HELPERS
-// ═══════════════════════════════════════════════════════════════
-
-function isOOP(playerPos,oppPos){
-  return POSTFLOP_ORDER[playerPos]<POSTFLOP_ORDER[oppPos];
-}
-
-// ═══════════════════════════════════════════════════════════════
-// MONTE CARLO ENGINE
-// ═══════════════════════════════════════════════════════════════
-
-// Build all 2-card combos from a deck array
-function allPairs(deck){
-  var pairs=[];
-  for(var i=0;i<deck.length;i++)
-    for(var j=i+1;j<deck.length;j++)
-      pairs.push([deck[i],deck[j]]);
-  return pairs;
-}
-
-// Get opponent range filtered by type and action against a board
-// action: "bet", "check", "call"
-// Returns array of [card, card] pairs
-function getRange(oppType,action,board,heroHole){
-  var known={};
-  board.forEach(function(c){known[c.rank+c.suit]=1;});
-  heroHole.forEach(function(c){known[c.rank+c.suit]=1;});
-  var deck=mkDeck().filter(function(c){return !known[c.rank+c.suit];});
-  var pairs=allPairs(deck);
-
-  return pairs.filter(function(hand){
-    var info=classify(hand,board);
-    var cat=info.category;
-    var hasPair=info.ev.rank>=1;
-    var bigDraw=info.drawOuts>=8;
-    var anyDraw=info.drawOuts>=4;
-    var str=info.strength;
-
-    if(oppType==="tight"){
-      if(action==="bet"){
-        // Top pair good kicker+, overpairs, sets+, nut draws
-        return cat==="monster"||cat==="strong"||
-               (cat==="good"&&str>=0.45)||
-               (bigDraw&&info.drawOuts>=9);
-      }
-      if(action==="call"){
-        // Calls with good+, strong draws
-        return cat==="monster"||cat==="strong"||cat==="good"||bigDraw;
-      }
-      // "check" — everything they'd have that isn't in their bet range
-      return !(cat==="monster"||cat==="strong"||
-               (cat==="good"&&str>=0.45)||
-               (bigDraw&&info.drawOuts>=9));
-    }
-
-    if(oppType==="aggro"){
-      if(action==="bet"){
-        // Any pair, any draw, plus broadway air (bluffs)
-        return hasPair||anyDraw||info.holeVals[0]>=10;
-      }
-      if(action==="call"){
-        // Calls with any pair, any draw
-        return hasPair||anyDraw;
-      }
-      // "check" — complete air, no pair, no draw, no broadway
-      return !hasPair&&!anyDraw&&info.holeVals[0]<10;
-    }
-
-    // neutral/regular
-    if(action==="bet"){
-      return cat==="monster"||cat==="strong"||cat==="good"||bigDraw;
-    }
-    if(action==="call"){
-      return cat==="monster"||cat==="strong"||cat==="good"||cat==="marginal"||anyDraw;
-    }
-    // "check" — not in bet range
-    return !(cat==="monster"||cat==="strong"||cat==="good"||bigDraw);
-  });
-}
-
-// Monte Carlo equity: hero hole cards vs opponent range, given board
-// Returns equity as 0-1
-function mcEquity(hole,board,oppRange,trials){
-  if(!oppRange||!oppRange.length)return 0.5;
-  trials=trials||500;
-  var wins=0,ties=0,ran=0;
-
-  // Known cards to exclude
-  var knownSet={};
-  hole.forEach(function(c){knownSet[c.rank+c.suit]=1;});
-  board.forEach(function(c){knownSet[c.rank+c.suit]=1;});
-
-  // Remaining deck for board runout
-  var baseDeck=mkDeck().filter(function(c){return !knownSet[c.rank+c.suit];});
-  var need=5-board.length;
-
-  for(var t=0;t<trials;t++){
-    // Pick random opponent hand
-    var opp=oppRange[0|Math.random()*oppRange.length];
-
-    // Exclude opponent cards from runout deck
-    var oSet={};
-    opp[0]&&(oSet[opp[0].rank+opp[0].suit]=1);
-    opp[1]&&(oSet[opp[1].rank+opp[1].suit]=1);
-    var runDeck=need>0?baseDeck.filter(function(c){return !oSet[c.rank+c.suit];}):null;
-
-    // Deal remaining board cards
-    var fullBoard=board;
-    if(need>0){
-      var sh=shuffle(runDeck);
-      fullBoard=board.concat(sh.slice(0,need));
-    }
-
-    // Evaluate both hands
-    var hScore=evalH(hole.concat(fullBoard)).score;
-    var oScore=evalH(opp.concat(fullBoard)).score;
-
-    if(hScore>oScore)wins++;
-    else if(hScore===oScore)ties++;
-    ran++;
-  }
-  return ran>0?(wins+ties*0.5)/ran:0.5;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// SCENARIO GENERATOR
-// ═══════════════════════════════════════════════════════════════
-
-function genScenario(positions){
-  var sw=[{s:"preflop",w:0.3},{s:"flop",w:0.35},{s:"turn",w:0.25},{s:"river",w:0.1}];
-  var r=Math.random(),c=0,street="flop";
-  for(var i=0;i<sw.length;i++){c+=sw[i].w;if(r<c){street=sw[i].s;break;}}
-  var pos=positions[0|Math.random()*positions.length];
-  var opp=OPP[0|Math.random()*OPP.length];
-  var op=positions.filter(function(p){return p!==pos;});
-  var oppPos=op[0|Math.random()*op.length]||"BTN";
-
-  // Post-flop: determine IP/OOP relationship and scenario type
-  // playerIsOOP = player acts first, so no opponent action before them
-  var playerIsOOP=false;
-  var postflopSit="ip_vs_check"; // default: opponent acted first and checked
-
-  if(street!=="preflop"){
-    playerIsOOP=isOOP(pos,oppPos);
-    if(playerIsOOP){
-      // Player acts first. Two sub-scenarios:
-      // (a) Player is first to act (check or bet) — 50%
-      // (b) Player checked, opponent then bet, back to player — 50%
-      if(Math.random()<0.5){
-        postflopSit="oop_first_to_act";
-      }else{
-        postflopSit="oop_check_then_opp_bets";
-      }
-    }else{
-      // Player is IP — opponent acted first
-      if(Math.random()<0.5){
-        postflopSit="ip_vs_bet";
-      }else{
-        postflopSit="ip_vs_check";
-      }
-    }
-  }
-
-  var pH,oH,board,att=0;
-  while(att<20){
-    att++;var d=shuffle(mkDeck());pH=[d[0],d[1]];oH=[d[2],d[3]];
-    var bc=street==="flop"?3:street==="turn"?4:street==="river"?5:0;
-    board=d.slice(4,4+bc);
-    if(bc===0)break;
-    if(bc>=5&&evalH(board).rank>=4)continue;
-    var bf={};board.forEach(function(x){bf[x.rank]=(bf[x.rank]||0)+1;});
-    if(Object.values(bf).some(function(v){return v>=3;}))continue;
-    if(bc===3){var sf={};board.forEach(function(x){sf[x.suit]=(sf[x.suit]||0)+1;});if(Object.values(sf).some(function(v){return v>=3;})&&Math.random()<0.7)continue;}
-    break;
-  }
-
-  var potSize,betSize;
-  if(street==="preflop"){
-    var pfSit="open";
-    if(pos==="BB"||pos==="SB")pfSit=Math.random()<0.5?"vs_raise":"open";
-    else pfSit=Math.random()<0.25?"vs_raise":"open";
-
-    // Fix opponent position for preflop action order
-    var preOrder=positions.length>=6?P6:P3;
-    var pIdx=preOrder.indexOf(pos);
-    if(pfSit==="open"){
-      var behind=[];
-      for(var bi=pIdx+1;bi<preOrder.length;bi++){if(positions.indexOf(preOrder[bi])!==-1)behind.push(preOrder[bi]);}
-      if(behind.length>0)oppPos=behind[0|Math.random()*behind.length];
-    }else{
-      var before=[];
-      for(var bfi=0;bfi<pIdx;bfi++){if(positions.indexOf(preOrder[bfi])!==-1)before.push(preOrder[bfi]);}
-      if(pos==="BB"||pos==="SB")before=positions.filter(function(p){return p!==pos;});
-      if(before.length>0)oppPos=before[0|Math.random()*before.length];
-    }
-
-    if(pfSit==="vs_raise"){potSize=3.5;betSize=2.5;}
-    else{potSize=1.5;betSize=0;}
-    return{street:street,pos:pos,opp:opp,oppPos:oppPos,playerHand:pH,oppHand:oH,board:board,potSize:potSize,betSize:betSize,preflopSit:pfSit,postflopSit:null,playerIsOOP:false};
-  }
-
-  // Post-flop pot and bet sizing
-  potSize=4+(0|Math.random()*12);
-  if(postflopSit==="ip_vs_bet"||postflopSit==="oop_check_then_opp_bets"){
-    // Opponent bet — generate a bet size
-    var sz=[0.33,0.5,0.66,0.75][0|Math.random()*4];
-    betSize=Math.max(2,Math.round(potSize*sz));
-    potSize+=betSize;
-  }else{
-    // No bet — checked to player or player first to act
-    betSize=0;
-  }
-
-  return{street:street,pos:pos,opp:opp,oppPos:oppPos,playerHand:pH,oppHand:oH,board:board,potSize:potSize,betSize:betSize,preflopSit:null,postflopSit:postflopSit,playerIsOOP:playerIsOOP};
-}
-
-// ═══════════════════════════════════════════════════════════════
-// DEBUG HARNESS — generates N random hands with full evaluation
-// ═══════════════════════════════════════════════════════════════
-
-function debugRun(n,tableSize){
-  n=n||100;
-  var positions=tableSize===6?P6:P3;
-  var results=[];
-
-  for(var i=0;i<n;i++){
-    var sc=genScenario(positions);
-    var nota=hn(sc.playerHand[0],sc.playerHand[1]);
-    var boardStr=sc.board.map(cstr).join(" ")||"--";
-
-    // Determine available actions
-    var acts;
-    if(sc.street==="preflop"){
-      if(sc.preflopSit==="vs_raise")acts=["Fold","Call","3-Bet"];
-      else if(sc.pos==="BB")acts=["Check","Raise"];
-      else acts=["Fold","Raise"];
-    }else{
-      acts=sc.betSize>0?["Fold","Call","Raise"]:["Check","Bet"];
-    }
-
-    // Evaluate each possible action
-    var evals={};
-    for(var a=0;a<acts.length;a++){
-      var act=acts[a];
-      var ev;
-      if(sc.street==="preflop"){
-        ev=evalPre(act,nota,sc.pos,sc.preflopSit,true);
-      }else{
-        ev=evalPost(act,sc.playerHand,sc.board,sc.potSize,sc.betSize,sc.opp,sc.street,sc.postflopSit,true);
-      }
-      evals[act]=ev;
-    }
-
-    // Pick the first action to get the "best" answer info
-    var bestEv=evals[acts[0]];
-    var bestAction=bestEv.best;
-
-    // Classify info for postflop
-    var classInfo=null;
-    if(sc.street!=="preflop"){
-      classInfo=classify(sc.playerHand,sc.board);
-    }
-
-    // Build row
-    var row={
-      hand:i+1,
-      street:sc.street,
-      pos:sc.pos,
-      oppPos:sc.oppPos,
-      oppType:sc.opp.id,
-      cards:nota,
-      board:boardStr,
-      potSize:sc.potSize,
-      betSize:sc.betSize,
-      situation:sc.street==="preflop"?sc.preflopSit:(sc.postflopSit||"--"),
-      playerIsOOP:sc.playerIsOOP?"OOP":"IP",
-      availableActions:acts.join("/"),
-      bestAction:bestAction,
-      acceptable:bestEv.acceptable.join("/"),
-      // Classification
-      handCategory:classInfo?classInfo.category:"--",
-      handDesc:classInfo?classInfo.handDesc:"--",
-      handStrength:classInfo?classInfo.strength.toFixed(3):"--",
-      draws:classInfo?(classInfo.draws.map(function(d){return d.desc;}).join(", ")||"none"):"--",
-      drawOuts:classInfo?classInfo.drawOuts:"--",
-      boardTexture:classInfo?(classInfo.boardTexture.texture||"--"):"--",
-      // MC equity (if postflop)
-      mcEquity:bestEv.info&&bestEv.info.strength?bestEv.info.strength.toFixed(3):"--",
-      // EV rewards per action
-      evBest:(evals[bestAction]?evals[bestAction].evDiff:0).toFixed(1),
-      // Narrative (first 120 chars)
-      explanation:bestEv.explanation?bestEv.explanation.substring(0,120):"--",
-      // Full narrative
-      fullExplanation:bestEv.explanation||"--",
-    };
-
-    // Add per-action ratings
-    for(var a2=0;a2<acts.length;a2++){
-      row["rating_"+acts[a2]]=evals[acts[a2]].rating;
-      row["ev_"+acts[a2]]=evals[acts[a2]].evDiff.toFixed(1);
-    }
-
-    results.push(row);
-  }
-  return results;
-}
-
-function debugToCSV(results){
-  if(!results.length)return"";
-  // Collect all columns from all rows
-  var colSet={};
-  results.forEach(function(r){Object.keys(r).forEach(function(k){if(k!=="fullExplanation")colSet[k]=1;});});
-  var cols=Object.keys(colSet);
-  var lines=[cols.join(",")];
-  for(var i=0;i<results.length;i++){
-    var r=results[i];
-    var vals=cols.map(function(c){
-      var v=r[c]!=null?String(r[c]):"";
-      if(v.indexOf(",")!==-1||v.indexOf('"')!==-1||v.indexOf("\n")!==-1)return'"'+v.replace(/"/g,'""')+'"';
-      return v;
-    });
-    lines.push(vals.join(","));
-  }
-  return lines.join("\n");
-}
-
-function debugSummary(results){
-  var total=results.length;
-  var byStreet={};var byOpp={};var byPos={};var byCat={};var actionDist={};
-  var flags=[];
-
-  for(var i=0;i<total;i++){
-    var r=results[i];
-    // By street
-    if(!byStreet[r.street])byStreet[r.street]={n:0};
-    byStreet[r.street].n++;
-    // By opp
-    if(!byOpp[r.oppType])byOpp[r.oppType]={n:0,actions:{}};
-    byOpp[r.oppType].n++;
-    byOpp[r.oppType].actions[r.bestAction]=(byOpp[r.oppType].actions[r.bestAction]||0)+1;
-    // By pos
-    if(!byPos[r.pos])byPos[r.pos]={n:0};
-    byPos[r.pos].n++;
-    // By category
-    if(r.handCategory!=="--"){
-      if(!byCat[r.handCategory])byCat[r.handCategory]={n:0,actions:{}};
-      byCat[r.handCategory].n++;
-      byCat[r.handCategory].actions[r.bestAction]=(byCat[r.handCategory].actions[r.bestAction]||0)+1;
-    }
-    // Action distribution
-    actionDist[r.bestAction]=(actionDist[r.bestAction]||0)+1;
-
-    // Flag suspicious patterns
-    if(r.handCategory==="monster"&&r.bestAction==="Fold"){
-      flags.push("#"+r.hand+": MONSTER hand ("+r.cards+" / "+r.handDesc+") told to Fold on "+r.board);
-    }
-    if(r.handCategory==="trash"&&r.bestAction==="Raise"&&r.street!=="preflop"){
-      flags.push("#"+r.hand+": TRASH hand ("+r.cards+" / "+r.handDesc+") told to Raise on "+r.board);
-    }
-    if(r.handCategory==="strong"&&r.bestAction==="Fold"){
-      flags.push("#"+r.hand+": STRONG hand ("+r.cards+" / "+r.handDesc+") told to Fold on "+r.board+", opp="+r.oppType+", sit="+r.situation);
-    }
-    if(r.handDesc==="Overcards"&&r.street!=="preflop"){
-      // Verify overcards label: both hole cards should be above board high
-      var hc=r.cards;
-      // Quick parse: first two chars are ranks
-      var hr1=RV[hc[0]]||0,hr2=RV[hc[1]]||0;
-      var bc=r.board.split(" ").map(function(cs){return RV[cs[0]]||0;});
-      var boardHigh=Math.max.apply(null,bc);
-      if(hr1<=boardHigh||hr2<=boardHigh){
-        flags.push("#"+r.hand+": OVERCARDS BUG — "+r.cards+" labeled overcards but board "+r.board+" has higher card");
-      }
-    }
-    // Check narrative isn't empty
-    if(!r.explanation||r.explanation==="--"||r.explanation.length<10){
-      flags.push("#"+r.hand+": Empty/short explanation for "+r.cards+" on "+r.board);
-    }
-  }
-
-  var lines=["=== DEBUG RUN: "+total+" hands ===",""];
-  lines.push("STREET DISTRIBUTION:");
-  Object.keys(byStreet).forEach(function(s){lines.push("  "+s+": "+byStreet[s].n);});
-  lines.push("");
-  lines.push("POSITION DISTRIBUTION:");
-  Object.keys(byPos).forEach(function(p){lines.push("  "+p+": "+byPos[p].n);});
-  lines.push("");
-  lines.push("ACTION DISTRIBUTION (best action):");
-  Object.keys(actionDist).forEach(function(a){lines.push("  "+a+": "+actionDist[a]+" ("+Math.round(actionDist[a]/total*100)+"%)");}); 
-  lines.push("");
-  lines.push("BY OPPONENT TYPE:");
-  Object.keys(byOpp).forEach(function(o){
-    var d=byOpp[o];lines.push("  "+o+" ("+d.n+" hands): "+Object.entries(d.actions).map(function(e){return e[0]+"="+e[1];}).join(", "));
-  });
-  lines.push("");
-  lines.push("BY HAND CATEGORY (postflop):");
-  Object.keys(byCat).forEach(function(c){
-    var d=byCat[c];lines.push("  "+c+" ("+d.n+"): "+Object.entries(d.actions).map(function(e){return e[0]+"="+e[1];}).join(", "));
-  });
-  lines.push("");
-  if(flags.length===0){
-    lines.push("FLAGS: None — no suspicious patterns detected.");
-  }else{
-    lines.push("FLAGS ("+flags.length+" issues):");
-    flags.forEach(function(f){lines.push("  ⚠ "+f);});
-  }
-  return lines.join("\n");
-}
-
-// ═══════════════════════════════════════════════════════════════
-// OPPONENT INFLUENCE DESCRIPTIONS
-// ═══════════════════════════════════════════════════════════════
-
-function oppContext(opp, facingBet, street, bestAction){
-  var id=opp.id;
-  if(facingBet){
-    if(id==="tight"){
-      if(bestAction==="Fold")return "Against a Careful player, this bet almost always means a real hand.";
-      if(bestAction==="Call")return "A Careful player rarely bluffs, but your hand is strong enough regardless.";
-      if(bestAction==="Raise")return "Even against a Careful player, your hand is too strong not to raise for value.";
-      return "A Careful player's bets are almost always for value.";
-    }
-    if(id==="aggro"){
-      if(bestAction==="Fold")return "Even against an Aggro player, you have nothing to bluff-catch with here.";
-      if(bestAction==="Call")return "Against an Aggro player who bluffs often, your hand works as a bluff-catcher.";
-      if(bestAction==="Raise")return "Against an Aggro player, raising punishes their wide betting range.";
-      return "An Aggro player's range is wide here.";
-    }
-    if(bestAction==="Fold")return "Against a balanced range, you don't have enough to continue.";
-    if(bestAction==="Call")return "Against a balanced range, your hand has enough equity to call.";
-    if(bestAction==="Raise")return "Against a balanced range, your hand is strong enough to raise.";
-    return "Their betting range is balanced — a mix of value and some bluffs.";
-  }else{
-    if(id==="tight"){
-      if(bestAction==="Bet")return "A Careful player checking signals weakness — good spot to take the pot.";
-      if(bestAction==="Check")return "A Careful player checking means weakness, but your hand can't profit from betting either.";
-      return "A Careful player checking usually means a weak or medium hand.";
-    }
-    if(id==="aggro"){
-      if(bestAction==="Bet")return "An Aggro player checking signals genuine weakness — they'd bet anything decent.";
-      if(bestAction==="Check")return "An Aggro player checking is unusual, but your hand isn't strong enough to exploit it.";
-      return "An Aggro player's check signals genuine weakness.";
-    }
-    if(bestAction==="Bet")return "Their check could mean weakness — a good spot to bet.";
-    if(bestAction==="Check")return "Their checking range is mixed, and your hand can't profit from betting.";
-    return "A Regular player's check could mean a weak hand or a trap.";
-  }
-}
-
-// Opponent modifier for decision thresholds
-function oppMod(oppId){
-  if(oppId==="tight")return{callThresh:0.08,bluffMore:true,trapLess:true};
-  if(oppId==="aggro")return{callThresh:-0.08,bluffMore:false,trapLess:false};
-  return{callThresh:0,bluffMore:false,trapLess:false};
-}
-
-// ═══════════════════════════════════════════════════════════════
-// NARRATIVE BUILDER (post-flop explanations)
-// ═══════════════════════════════════════════════════════════════
-
-function buildNarr(best,info,opp,street,pot,bet,board,postflopSit,showPct,mcEq,closeSpot){
-  var isR=street==="river",fb=bet>0;
-  var ad=isR?[]:info.draws;
-  var dt=ad.map(function(d){return d.desc;}).join(" and ");
-  var ao=isR?0:info.drawOuts;
-  var tex=info.boardTexture;
-  var hd=info.handDesc;
-  if(hd==="Nothing"&&ad.length>0){hd=dt.charAt(0).toUpperCase()+dt.slice(1);}
-  var eqPct=mcEq!=null?Math.round(mcEq*100):null;
-
-  // Texture phrase — woven into description, not appended
-  var texP="";
-  if(tex&&tex.texture!=="none"){
-    if(isR){
-      if(tex.flushDraw)texP=" — board completed the flush draw";
-      else if(tex.texture==="dry")texP=" on a dry runout";
-    }else{
-      if(tex.texture==="wet")texP=" on a wet board";
-      else if(tex.texture==="dry")texP=" on a dry board";
-    }
-  }
-
-  // Opponent context — action-aware, one phrase
-  var oc=oppContext(opp,fb,street,best);
-
-  if(fb){
-    var needed=potOdds(pot,bet);
-    var origPot=pot-bet;
-    var pov=Math.round(needed*100);
-
-    if(closeSpot){
-      var oppId=opp.id;
-      var closeMsg;
-      if(oppId==="tight"&&best==="Fold") closeMsg="Marginal equity, but a Careful player's tight range tips the balance. Lean toward folding.";
-      else if(oppId==="tight"&&best==="Call") closeMsg="Just enough equity to call, but a Careful player rarely bluffs — proceed cautiously.";
-      else if(oppId==="aggro"&&best==="Call") closeMsg="Close spot, but an Aggro player's wide betting range gives you enough equity to continue.";
-      else if(oppId==="aggro"&&best==="Fold") closeMsg="Even against a wide range, you're just below breakeven. Fold is the disciplined play.";
-      else closeMsg="A genuinely close spot. Both calling and folding are reasonable here.";
-      if(showPct)return hd+texP+" — roughly "+eqPct+"% equity, needing "+pov+"% to call "+bet+"BB into "+(origPot+bet)+"BB. "+closeMsg;
-      return hd+texP+" — "+closeMsg;
-    }
-
-    if(best==="Fold"){
-      if(ao>0){
-        if(showPct)return hd+" plus "+dt+texP+" — roughly "+eqPct+"% equity. You need "+pov+"% to call "+bet+"BB into "+(origPot+bet)+"BB. Not enough. "+oc;
-        return hd+" plus "+dt+texP+" — not enough equity to justify calling here. Your draws don't close the gap. "+oc;
-      }
-      if(isR)return hd+texP+" — not strong enough to beat what they're betting for value here. Nothing left to draw to. "+oc;
-      if(showPct)return hd+" with no real draw"+texP+" — roughly "+eqPct+"% equity against this range. You'd need "+pov+"% to call. Nothing to work with. "+oc;
-      return hd+" with no real draw"+texP+" — very little chance against this range. Nothing to work with here. "+oc;
-    }
-
-    if(best==="Call"){
-      if(ao>=6){
-        if(showPct)return hd+" plus "+dt+texP+" — roughly "+eqPct+"% equity. You're paying "+bet+"BB into "+(origPot+bet)+"BB, needing "+pov+"%. Your draws give you plenty of room. Call.";
-        return hd+" plus "+dt+texP+" — your draws give you a solid edge over the price you're paying. Profitable call.";
-      }
-      if(showPct)return hd+texP+" — roughly "+eqPct+"% equity against their betting range, needing "+pov+"%. Enough to continue. "+oc+" Call.";
-      return hd+texP+" — strong enough to continue against this bet. "+oc+" Call.";
-    }
-
-    if(best==="Raise"){
-      if(showPct)return hd+texP+" — roughly "+eqPct+"% equity against their betting range. Very strong. Raise for value — build the pot. "+oc;
-      return hd+texP+" — very strong. Raise for value, build the pot against hands that will call with worse. "+oc;
-    }
-  }else{
-    if(closeSpot){
-      return hd+texP+" — a borderline spot. Both betting and checking are fine here. "+oc;
-    }
-
-    if(best==="Bet"){
-      if(ad.length>0&&["good","strong","monster"].indexOf(info.category)===-1){
-        return hd+texP+" isn't much yet, but "+dt+" gives you outs if called. Good spot to take it down now or improve. Bet.";
-      }
-      if(showPct)return hd+texP+" — roughly "+eqPct+"% equity vs their checking range. Worse hands will call. "+oc+" Bet for value.";
-      return hd+texP+" — solid against their checking range. Worse hands will call here. "+oc+" Bet for value.";
-    }
-    if(best==="Check"){
-      if(isR)return hd+texP+" — betting only gets called by better. Take the showdown. "+oc;
-      return hd+texP+" — betting only gets called by better hands. Take the free card. "+oc;
-    }
-  }
-  return hd+". "+oc;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// POST-FLOP EVALUATOR
-// ═══════════════════════════════════════════════════════════════
-
-function evalPost(action,hole,board,pot,bet,opp,street,postflopSit,showPct){
-  var info=classify(hole,board);
-  var isR=street==="river";
-  var best,acc,mcEq,closeSpot=false;
-
-  if(bet>0){
-    // Facing a bet — compute equity vs opponent's betting range
-    var betRange=getRange(opp.id,"bet",board,hole);
-    mcEq=mcEquity(hole,board,betRange,500);
-    // Pot already includes opponent's bet (see genScenario)
-    // To call bet into pot: need bet/(pot+bet) equity
-    var needed=potOdds(pot,bet);
-    var gap=mcEq-needed;
-
-    if(mcEq>=0.62&&gap>0.08){
-      // Very strong equity — raise for value
-      best="Raise";acc=["Raise","Call"];
-    }else if(gap>0.08){
-      // Clear call
-      best="Call";acc=["Call"];
-    }else if(gap>0.04){
-      // Call is best, fold acceptable
-      best="Call";acc=["Call","Fold"];
-    }else if(gap>-0.04){
-      // Genuinely close spot — both green
-      closeSpot=true;
-      if(gap>=0){best="Call";acc=["Call","Fold"];}
-      else{best="Fold";acc=["Fold","Call"];}
-    }else if(gap>-0.08){
-      // Fold is best, call acceptable
-      best="Fold";acc=["Fold","Call"];
-    }else{
-      // Clear fold
-      best="Fold";acc=["Fold"];
-    }
-  }else{
-    // No bet — checked to player or first to act
-    var checkRange=getRange(opp.id,"check",board,hole);
-    var callRange=getRange(opp.id,"call",board,hole);
-
-    var eqVsCheck=mcEquity(hole,board,checkRange,500);
-    var eqVsCall=callRange.length>0?mcEquity(hole,board,callRange,500):0.5;
-    mcEq=eqVsCheck;
-
-    if(eqVsCall>0.55){
-      // Clear value bet
-      best="Bet";acc=["Bet"];
-    }else if(eqVsCall>0.50){
-      // Marginal value — bet preferred, check acceptable
-      best="Bet";acc=["Bet","Check"];
-    }else if(!isR&&info.drawOuts>=6&&eqVsCall>0.30){
-      // Semi-bluff with draws
-      best="Bet";acc=["Bet","Check"];
-    }else if(eqVsCall>0.46){
-      // Close spot — both green
-      closeSpot=true;
-      best="Check";acc=["Check","Bet"];
-    }else{
-      // Clear check
-      best="Check";acc=["Check"];
-    }
-  }
-
-  // Rating: closeSpot means both acceptable actions are green
-  var rating;
-  if(action===best){
-    rating="green";
-  }else if(closeSpot&&acc.indexOf(action)!==-1){
-    rating="green";
-  }else if(acc.indexOf(action)!==-1){
-    rating="yellow";
-  }else{
-    rating="red";
-  }
-
-  // EV calculation
-  var evDiff=0;
-  if(rating==="green"){
-    if(best==="Fold"||action==="Fold")evDiff=+Math.max(0.3,Math.round(pot*0.02*10)/10);
-    else if(best==="Call"||action==="Call")evDiff=+Math.max(0.5,Math.round(pot*0.05*10)/10);
-    else if(best==="Raise"||best==="Bet"||action==="Raise"||action==="Bet")evDiff=+Math.max(0.8,Math.round(pot*0.08*10)/10);
-    else if(best==="Check"||action==="Check")evDiff=+Math.max(0.3,Math.round(pot*0.02*10)/10);
-  }else if(rating==="red"){
-    if(best==="Fold"&&action!=="Fold")evDiff=-(bet||Math.round(pot*0.5));
-    else if(action==="Fold"&&best!=="Fold")evDiff=-Math.round(pot*0.15);
-    else evDiff=-Math.round(pot*0.1);
-  }else{
-    evDiff=-Math.round(pot*0.03);
-  }
-
-  var explanation=buildNarr(best,info,opp,street,pot,bet,board,postflopSit,showPct,mcEq,closeSpot);
-  return{rating:rating,best:best,acceptable:acc,explanation:explanation,evDiff:evDiff,info:info};
-}
-
-// ═══════════════════════════════════════════════════════════════
-// PREFLOP EVALUATOR
-// ═══════════════════════════════════════════════════════════════
-
-// Approximate preflop equity categories for educational context
-function preflopStrengthNote(nota,pos){
-  var isPair=/^([AKQJT98765432])\1$/.test(nota);
-  var isSuited=nota.length===3&&nota[2]==="s";
-  var hi=nota[0],lo=nota.length>=2?nota[1]:"";
-  var hiV=RV[hi]||0,loV=RV[lo]||0;
-
-  if(isPair){
-    if(hiV>=11)return nota+" is a premium pair — top ~3% of hands. Very strong in any position.";
-    if(hiV>=8)return nota+" is a solid middle pair. Plays well from most positions but vulnerable to overcards.";
-    return nota+" is a small pair. Main value comes from flopping a set (~12% of the time).";
-  }
-  if(hi==="A"){
-    if(loV>=12)return nota+(isSuited?" (suited)":"")+" is a premium holding. Strong equity against most ranges.";
-    if(loV>=9)return nota+(isSuited?" (suited)":"")+" is a solid Ace. Playable from most positions"+(isSuited?", and the suited draw adds ~3% equity.":".");
-    if(isSuited)return nota+" is playable mainly for its suited quality — the flush potential adds ~3% equity over the offsuit version, but the kicker is weak.";
-    return nota+" has a weak kicker. It may seem strong because of the Ace, but it often makes second-best hands that lose significant pots.";
-  }
-  if(hiV>=12&&loV>=11){
-    return nota+(isSuited?" (suited)":"")+" is a strong broadway combo with good high-card equity.";
-  }
-  if(hiV>=10&&loV>=9&&Math.abs(hiV-loV)<=2){
-    return nota+(isSuited?" (suited)":"")+" is a connected hand. Its value comes from making straights and"+(isSuited?" flushes":"")+" rather than high-card strength.";
-  }
-  if(isSuited&&Math.abs(hiV-loV)<=2)return nota+" is a suited connector. Playable in position for its straight and flush potential, but low raw equity.";
-  if(hiV>=12)return nota+" has one strong card but a weak kicker. Often dominated by better hands in the same range.";
-  if(isSuited)return nota+" is a suited hand with a wide gap. Flush potential gives it some value in late position, but straight equity is too limited to rely on.";
-  return nota+" is an unplayable hand. No suit advantage, poor connectivity, and easily dominated. Even from the BTN this hand can't realize enough equity to be profitable.";
-}
-
-function evalPre(action,nota,pos,sit,showPct){
-  var best,acc,expl;
-  var pl=P6.indexOf("BB")-P6.indexOf(pos);if(pl<0)pl+=P6.length;
-  var strengthNote=preflopStrengthNote(nota,pos);
-
-  if(sit==="open"){
-    if(pos==="BB"){
-      var bbRaiseRange=new Set(["AA","KK","QQ","JJ","TT","99","AKs","AKo","AQs","AJs","ATs","AQo","KQs","A5s","A4s"]);
-      if(bbRaiseRange.has(nota)){
-        best="Raise";acc=["Raise","Check"];
-        expl=nota+" — strong enough to raise for value from BB. You have a free look but this hand builds the pot well.";
-      }else{
-        best="Check";acc=["Check"];
-        expl=nota+" — free flop, no reason to raise. See what comes.";
-      }
-    }else{
-      var range=OPEN[pos];if(!range)return{rating:"green",best:action,acceptable:[action],explanation:"",evDiff:0};
-      if(range.has(nota)){
-        best="Raise";acc=["Raise"];
-        expl=nota+" is a standard open from "+pos+". "+strengthNote+" Raise.";
-      }else{
-        best="Fold";acc=["Fold"];
-        expl=strengthNote+" Outside "+pos+" range with "+pl+" player"+(pl!==1?"s":"")+" behind.";
-      }
-    }
-  }else{
-    var ranges=pos==="BB"?BB_VS:pos==="SB"?SB_VS:null;
-    if(ranges){
-      if(ranges.threebet.has(nota)){
-        best="3-Bet";acc=["3-Bet"];
-        expl=nota+" — premium enough to 3-bet from "+pos+". "+strengthNote+" Build a bigger pot.";
-      }else if(ranges.call.has(nota)){
-        best="Call";acc=["Call"];
-        expl=nota+" defends from "+pos+" by calling but isn't strong enough to 3-bet. "+strengthNote;
-      }else{
-        best="Fold";acc=["Fold"];
-        expl=nota+" can't profitably defend from "+pos+" vs a raise. "+strengthNote;
-      }
-    }else{
-      if(["AA","KK","QQ","JJ","AKs","AKo"].indexOf(nota)!==-1){
-        best="3-Bet";acc=["3-Bet","Call"];
-        expl=nota+" — premium. 3-bet to build the pot and isolate. "+strengthNote;
-      }else if(OPEN[pos]&&OPEN[pos].has(nota)){
-        best="Call";acc=["Call","Fold"];
-        expl=nota+" is borderline vs a raise here. Calling is reasonable but folding isn't a big mistake. "+strengthNote;
-      }else{
-        best="Fold";acc=["Fold"];
-        expl=nota+" is too weak to continue vs a raise from this position. "+strengthNote;
-      }
-    }
-  }
-
-  var rating=action===best?"green":acc.indexOf(action)!==-1?"yellow":"red";
-
-  // EV: correct plays get +EV, mistakes get -EV
-  var evDiff;
-  if(rating==="green"){
-    if(best==="Fold"||best==="Check")evDiff=+0.3;
-    else if(best==="Call")evDiff=+0.5;
-    else if(best==="3-Bet"||best==="Raise")evDiff=+1.0;
-    else evDiff=+0.3;
-  }else if(rating==="red"){
-    if(best==="Fold"&&action!=="Fold")evDiff=-2.5;
-    else if(best==="Check"&&action==="Raise")evDiff=-1.0;
-    else evDiff=-1.5;
-  }else{
-    evDiff=-0.3;
-  }
-
-  return{rating:rating,best:best,acceptable:acc,explanation:expl,evDiff:evDiff};
-}
-
-// ═══════════════════════════════════════════════════════════════
-// STORAGE
-// ═══════════════════════════════════════════════════════════════
-
-var SK="poker-trainer-data";
-var SETK="poker-trainer-settings";
-function loadLocal(){try{var r=localStorage.getItem(SK);return r?JSON.parse(r):null;}catch(e){return null;}}
-function saveLocal(d){try{if(d)localStorage.setItem(SK,JSON.stringify(d));else localStorage.removeItem(SK);}catch(e){}}
-function loadSettings(){try{var r=localStorage.getItem(SETK);return r?JSON.parse(r):{showPct:false,showPreEq:false,showHandInfo:false};}catch(e){return{showPct:false,showPreEq:false,showHandInfo:false};}}
-function saveSettings(s){try{localStorage.setItem(SETK,JSON.stringify(s));}catch(e){}}
 
 // ═══════════════════════════════════════════════════════════════
 // SMALL COMPONENTS
@@ -1167,6 +42,7 @@ function PB(props){
   var mkTip=gloss&&props.showTip?function(e){e.stopPropagation();props.showTip(e,gloss);}:null;
   return <span onMouseEnter={mkTip} onMouseLeave={props.showTip?function(){props.showTip(null);}:null} onClick={mkTip} style={{color:T.pos[props.pos]||T.gold,fontWeight:T.weight,cursor:gloss&&props.showTip?"help":undefined}}>{props.pos}</span>;
 }
+
 function StreetBadge(props){
   var gloss=GLOSSARY[props.street]||"";
   var mkTip=gloss&&props.showTip?function(e){e.stopPropagation();props.showTip(e,gloss);}:null;
@@ -1233,7 +109,7 @@ function NT(props){
 
 function CCard(props){
   var card=props.card,isBoard=props.board,delay=props.animDelay||0;
-  var col=SC[card.suit];var rank=RD[card.rank]||card.rank;
+  var col=SC[card.suit];var rank=card.rank==="T"?"10":card.rank;
   var animStyle={animationDelay:delay+"ms"};
   if(isBoard){
     var bw=props.bcW||T.bcW,bh=props.bcH||T.bcH,br=props.bcRank||T.bcRank,bsu=props.bcSuit||T.bcSuit;
@@ -1246,6 +122,71 @@ function CCard(props){
   return <div className="card-anim" style={{width:cw,height:ch,borderRadius:T.cardR,background:T.cream,border:"2px solid "+T.creamBorder,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:T.font,boxShadow:"0 4px 16px rgba(0,0,0,0.1)",gap:2,...animStyle}}>
     <span style={{fontSize:cr,fontWeight:800,color:col,lineHeight:1}}>{rank}</span>
     <span style={{fontSize:cs,color:col,lineHeight:1}}>{card.suit}</span>
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EQUITY METER — visual bar showing equity vs pot odds
+// ═══════════════════════════════════════════════════════════════
+
+function EqMeter(props){
+  var eq=props.eq,needed=props.needed,showPct=props.showPct;
+  if(eq==null)return null;
+  var pct=Math.round(eq*100);
+  var neededPct=needed!=null?Math.round(needed*100):null;
+  // Color: red→orange→yellow→green based on equity
+  var col=eq>=0.65?"#4a8a5a":eq>=0.50?"#7aa84a":eq>=0.35?"#c49a2a":"#b84a3a";
+  return <div style={{display:"flex",alignItems:"center",gap:6,marginLeft:"auto",flexShrink:0}}>
+    <span style={{fontSize:10,color:"#8a8472",fontWeight:600}}>Edge</span>
+    <div style={{position:"relative",width:70,height:7,borderRadius:0,background:"#e0d8c8",overflow:"visible"}}>
+      <div style={{width:Math.min(pct,100)+"%",height:"100%",borderRadius:0,background:col,transition:"width 0.4s ease"}}/>
+      {neededPct!=null && <div style={{position:"absolute",left:Math.min(neededPct,100)+"%",top:-2,width:2,height:11,background:"#2b2b24",borderRadius:0,opacity:0.5}} title={"Break-even: "+neededPct+"%"}/>}
+    </div>
+    {showPct && <span style={{fontSize:10,color:"#8a8472",fontWeight:600}}>{pct+"%"}</span>}
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SUSPECT LINE — mini cards + probability bars
+// ═══════════════════════════════════════════════════════════════
+
+function MiniCard(props){
+  var c=props.card;var col=SC[c.suit];var rank=c.rank==="T"?"10":c.rank;
+  return <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:18,height:24,borderRadius:3,background:T.cream,border:"1px solid "+T.creamBorder,fontSize:13,fontWeight:800,color:col,lineHeight:1,fontFamily:T.font}}>{rank}</span>;
+}
+
+function MiniCardPair(props){
+  var cards=props.cards;
+  if(!cards||cards.length<2)return null;
+  return <span style={{display:"inline-flex",gap:2,alignItems:"center"}}><MiniCard card={cards[0]}/><MiniCard card={cards[1]}/></span>;
+}
+
+function Thermo(props){
+  var ratio=Math.max(props.ratio||0,0.25);
+  var r=Math.round(58+(208-58)*ratio);
+  var g=Math.round(138+(64-138)*ratio);
+  var b=Math.round(223+(64-223)*ratio);
+  var col="rgb("+r+","+g+","+b+")";
+  var glow=ratio>0.7?"0 0 6px "+col:"none";
+  return <div style={{width:5,height:24,background:T.creamBorder,overflow:"hidden",flexShrink:0,position:"relative",borderRadius:0}}>
+    <div style={{position:"absolute",bottom:0,width:"100%",height:Math.round(ratio*100)+"%",background:col,boxShadow:glow,borderRadius:0}}/>
+  </div>;
+}
+
+function SuspectLine(props){
+  var hands=props.hands,show=props.show,eq=props.eq,needed=props.needed,showPct=props.showPct;
+  var hasHands=show&&hands&&hands.length>0;
+  var hasEq=eq!=null;
+  if(!hasHands&&!hasEq)return null;
+  var display=hasHands?hands.slice(0,3):[];
+  return <div style={{display:"flex",gap:10,marginTop:8,paddingTop:8,borderTop:"1px solid "+T.creamBorder,alignItems:"center"}}>
+    {display.map(function(h,i){
+      return <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
+        <Thermo ratio={h.count/h.total}/>
+        <MiniCardPair cards={h.cards}/>
+      </div>;
+    })}
+    {hasEq && <EqMeter eq={eq} needed={needed} showPct={showPct}/>}
   </div>;
 }
 
@@ -1270,32 +211,47 @@ export default function PokerTrainer(){
   var [animKey,setAnimKey]=useState(0);
   var [evPulse,setEvPulse]=useState(null);
   var [btnFlash,setBtnFlash]=useState(null);
+  var [oppThinking,setOppThinking]=useState(false);
   var [debugData,setDebugData]=useState(null);
   var [tipState,setTipState]=useState(null);
+  var [showMistakesOnly,setShowMistakesOnly]=useState(false);
+  var [replayQueue,setReplayQueue]=useState([]);
+  var [replayMode,setReplayMode]=useState(false);
+  var [replayTotal,setReplayTotal]=useState(0);
+  var [mistakeMode,setMistakeMode]=useState(false);
+  var [mistakeSeeds,setMistakeSeeds]=useState([]);
+  var [mistakeResults,setMistakeResults]=useState([]);
+  var [mistakeIndex,setMistakeIndex]=useState(0);
+  var [mistakeBonus,setMistakeBonus]=useState(null);
+  var [seedInput,setSeedInput]=useState("");
   var fileRef=useRef(null);
+  var boardDoneRef=useRef(0);
   var positions=tableSize===6?P6:P3;
   var F={fontFamily:T.font,fontWeight:T.weight};
 
-  // Screen size for responsive layout
   var [screenH,setScreenH]=useState(typeof window!=="undefined"?window.innerHeight:900);
   var [screenW,setScreenW]=useState(typeof window!=="undefined"?window.innerWidth:480);
   var smallScreen=screenH<750;
-  // Dynamic board card width: fit 5 cards within table
   var effectiveMaxW=Math.min(T.maxW,screenW-T.pagePad*2);
   var tableInnerW=effectiveMaxW-T.tablePadX*2-6;
   var dynBcW=Math.min(T.bcW,Math.floor((tableInnerW-4*T.bcGap)/5));
   var dynBcH=Math.round(dynBcW*T.bcH/T.bcW);
   var dynBcRank=Math.round(dynBcW*T.bcRank/T.bcW);
   var dynBcSuit=Math.round(dynBcW*T.bcSuit/T.bcW);
-  // Adaptive heights for small screens
-  var dynNarrH=smallScreen?170:T.narrH;
-  var dynCardH=smallScreen?164:T.cardH;
-  var dynCardW=Math.round(dynCardH*T.cardW/T.cardH);
-  var dynCardRank=smallScreen?82:T.cardRank;
-  var dynCardSuit=smallScreen?28:T.cardSuit;
   var dynHeaderPad=smallScreen?10:12;
+  // Fixed vertical cost: pagePad*2 + header(approx) + headerMarginB + gapToTable + TABLE_H + tableWrapperMarginB + gapNarrToHand
+  var fixedV=T.pagePad*2+(dynHeaderPad*2+13+2)+12+T.gapToTable+TABLE_H+(T.seat/2+22)+T.gapNarrToHand;
+  var availV=Math.max(0,screenH-fixedV);
+  // Card width from 65% rule, height from aspect ratio, then cap to available space
+  var dynCardW=Math.round((effectiveMaxW*0.65-T.cardGap)/2);
+  var dynCardH=Math.min(Math.round(dynCardW*T.cardH/T.cardW),Math.round(availV*0.55));
+  dynCardH=Math.max(100,dynCardH);
+  dynCardW=Math.round(dynCardH*T.cardW/T.cardH);
+  var dynCardRank=Math.round(dynCardW*T.cardRank/T.cardW);
+  var dynCardSuit=Math.round(dynCardW*T.cardSuit/T.cardH);
+  // Narrative gets remaining space after cards, with floor and ceiling
+  var dynNarrH=Math.min(T.narrH,Math.max(100,availV-dynCardH));
 
-  // Tooltip helper
   function showTip(e,text){
     if(!e||!text){setTipState(null);return;}
     var rect=e.currentTarget.getBoundingClientRect();
@@ -1316,15 +272,107 @@ export default function PokerTrainer(){
     return function(){window.removeEventListener("resize",onResize);};
   },[]);
 
-  // Start preserves log if just changing table size
-  var start=useCallback(function(keepSession){
+  // Opponent thinking delay — starts after board is fully dealt
+  // oppThinking is set true eagerly on scenario load; this effect only schedules the turn-off
+  useEffect(function(){
+    if(!scenario||phase!=="action")return;
+    var sit=scenario.postflopSit;
+    var hasOppAction=scenario.street!=="preflop"&&(sit==="ip_vs_bet"||sit==="oop_check_then_opp_bets"||sit==="ip_vs_check");
+    if(!hasOppAction){setOppThinking(false);return;}
+    var thinkDur={tight:3000,neutral:1000,aggro:0}[scenario.opp.id]||0;
+    if(thinkDur===0){setOppThinking(false);return;}
+    var t=setTimeout(function(){setOppThinking(false);},boardDoneRef.current+thinkDur);
+    return function(){clearTimeout(t);};
+  },[animKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mistake mode completion — check when all 5 done
+  useEffect(function(){
+    if(!mistakeMode||mistakeIndex<5)return;
+    var allGreen=mistakeResults.every(function(r){return r==="green";});
+    if(allGreen){
+      var bonus=5+Math.floor(Math.random()*6);
+      setMistakeBonus(bonus);
+      setStack(function(s){return s+bonus;});
+      setEvPulse("green");setTimeout(function(){setEvPulse(null);},600);
+      var t=setTimeout(function(){
+        setMistakeMode(false);setMistakeBonus(null);
+        var sc2=genScenario(positions);
+        setSc(sc2);setSeedInput(encodeSeed(sc2.seed));
+        setPhase("action");setFB(null);setOppThinking(true);setAnimKey(function(k){return k+1;});setBtnFlash(null);
+      },2500);
+      return function(){clearTimeout(t);};
+    }else{
+      var t2=setTimeout(function(){
+        setMistakeMode(false);
+        var sc2=genScenario(positions);
+        setSc(sc2);setSeedInput(encodeSeed(sc2.seed));
+        setPhase("action");setFB(null);setOppThinking(true);setAnimKey(function(k){return k+1;});setBtnFlash(null);
+      },1500);
+      return function(){clearTimeout(t2);};
+    }
+  },[mistakeIndex]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  var start=useCallback(function(keepSession,seed){
     if(!keepSession&&log.length>0)persist(log);
     if(!keepSession){setLog([]);setStack(100);setHN(1);}
     else{setHN(function(h){return h+1;});}
-    setSc(genScenario(positions));setPhase("action");setFB(null);setScreen("game");setAnimKey(function(k){return k+1;});setBtnFlash(null);
+    var sc=seed!=null?genScenario(positions,seed):genScenario(positions);
+    setSc(sc);setSeedInput(encodeSeed(sc.seed));setPhase("action");setFB(null);setScreen("game");setOppThinking(true);setAnimKey(function(k){return k+1;});setBtnFlash(null);
   },[positions,log,persist]);
 
-  var goNext=useCallback(function(){setHN(function(h){return h+1;});setSc(genScenario(positions));setPhase("action");setFB(null);setAnimKey(function(k){return k+1;});setBtnFlash(null);setTipState(null);},[positions]);
+  var goNext=useCallback(function(){
+    setHN(function(h){return h+1;});
+    // Mistake mode: advance to next mistake or finish
+    if(mistakeMode){
+      var nextIdx=mistakeIndex+1;
+      if(nextIdx>=5){
+        setMistakeIndex(nextIdx);
+        // Completion handled by useEffect
+        return;
+      }
+      setMistakeIndex(nextIdx);
+      var msc=genScenario(positions,mistakeSeeds[nextIdx]);
+      setSc(msc);setSeedInput(encodeSeed(msc.seed));
+      setPhase("action");setFB(null);setOppThinking(true);setAnimKey(function(k){return k+1;});setBtnFlash(null);setTipState(null);
+      return;
+    }
+    // Replay mode: pop next seed from queue
+    if(replayMode&&replayQueue.length>0){
+      var next=replayQueue[0];
+      setReplayQueue(function(q){return q.slice(1);});
+      var sc=genScenario(positions,next);
+      setSc(sc);setSeedInput(encodeSeed(sc.seed));
+    }else{
+      if(replayMode){setReplayMode(false);setReplayTotal(0);}
+      var sc2=genScenario(positions);
+      setSc(sc2);setSeedInput(encodeSeed(sc2.seed));
+    }
+    setPhase("action");setFB(null);setOppThinking(true);setAnimKey(function(k){return k+1;});setBtnFlash(null);setTipState(null);
+  },[positions,replayMode,replayQueue,mistakeMode,mistakeIndex,mistakeSeeds]);
+
+  var replaySeed=useCallback(function(code){
+    if(!code||!code.trim())return;
+    var seed=decodeSeed(code.trim());
+    var sc=genScenario(positions,seed);
+    setSc(sc);setSeedInput(encodeSeed(sc.seed));setPhase("action");setFB(null);setOppThinking(true);setAnimKey(function(k){return k+1;});setBtnFlash(null);setTipState(null);
+  },[positions]);
+
+  var startMistakeMode=useCallback(function(){
+    var mistakes=log.filter(function(e){return e.rating==="red"&&!e.replayed&&e.seed!=null;});
+    if(mistakes.length<5)return;
+    var picked=mistakes.slice();
+    for(var i=picked.length-1;i>0;i--){var j=0|Math.random()*(i+1);var t=picked[i];picked[i]=picked[j];picked[j]=t;}
+    picked=picked.slice(0,5);
+    var seeds=picked.map(function(e){return e.seed;});
+    setMistakeSeeds(seeds);
+    setMistakeResults([null,null,null,null,null]);
+    setMistakeIndex(0);
+    setMistakeMode(true);
+    setMistakeBonus(null);
+    var sc=genScenario(positions,seeds[0]);
+    setSc(sc);setSeedInput(encodeSeed(sc.seed));setPhase("action");setFB(null);setScreen("game");setOppThinking(true);setAnimKey(function(k){return k+1;});setBtnFlash(null);
+    setHN(function(h){return h+1;});
+  },[log,positions]);
 
   var act=useCallback(function(action){
     if(!scenario)return;
@@ -1333,7 +381,6 @@ export default function PokerTrainer(){
     if(scenario.street==="preflop")ev=evalPre(action,n,scenario.pos,scenario.preflopSit,settings.showPct);
     else ev=evalPost(action,scenario.playerHand,scenario.board,scenario.potSize,scenario.betSize,scenario.opp,scenario.street,scenario.postflopSit,settings.showPct);
     setFB(ev);setPhase("feedback");setStack(function(s){return s+ev.evDiff;});
-    // Trigger animations
     setBtnFlash({action:action,rating:ev.rating});
     setEvPulse(ev.evDiff>=0?"green":"red");
     setTimeout(function(){setEvPulse(null);},600);
@@ -1344,14 +391,43 @@ export default function PokerTrainer(){
       :"It's the "+SN[scenario.street].toLowerCase()+". "+(scenario.betSize>0
           ?scenario.opp.emoji+" "+scenario.opp.name+" player bets "+scenario.betSize.toFixed(1)+"BB into a "+(scenario.potSize-scenario.betSize).toFixed(1)+"BB pot."
           :scenario.opp.emoji+" "+scenario.opp.name+" player checks.");
-    setLog(function(p){return p.concat([{hand:handNum,pos:scenario.pos,cards:n,board:scenario.board.length>0?scenario.board.map(cstr).join(" "):"--",pot:scenario.potSize.toFixed(1),bet:scenario.betSize>0?scenario.betSize.toFixed(1):"--",street:SN[scenario.street],situation:scenario.street==="preflop"?scenario.preflopSit:(scenario.betSize>0?"vs bet":"checked to"),opp:scenario.opp.name,oppEmoji:scenario.opp.emoji,oppColor:scenario.opp.color,action:action,correct:ev.best,rating:ev.rating,ev:ev.evDiff,narrative:logNarr,explanation:ev.explanation}]);});
-  },[scenario,handNum,settings.showPct]);
+    var logEntry={hand:handNum,pos:scenario.pos,cards:n,cardsExact:cstr(scenario.playerHand[0])+" "+cstr(scenario.playerHand[1]),board:scenario.board.length>0?scenario.board.map(cstr).join(" "):"--",pot:scenario.potSize.toFixed(1),bet:scenario.betSize>0?scenario.betSize.toFixed(1):"--",street:SN[scenario.street],situation:scenario.street==="preflop"?scenario.preflopSit:(scenario.betSize>0?"vs bet":"checked to"),opp:scenario.opp.name,oppEmoji:scenario.opp.emoji,oppColor:scenario.opp.color,action:action,correct:ev.best,rating:ev.rating,ev:ev.evDiff,narrative:logNarr,explanation:ev.explanation,
+      seed:scenario.seed||null,
+      equity:ev.debug?ev.debug.mcEq:null,
+      potOdds:ev.debug?ev.debug.potOdds:null,
+      gap:ev.debug?ev.debug.gap:null,
+      closeSpot:ev.debug?ev.debug.closeSpot:false,
+      category:ev.info?ev.info.category:null,
+      strength:ev.info?ev.info.strength:null,
+      handDesc:ev.info?ev.info.handDesc:null,
+      drawOuts:ev.info?ev.info.drawOuts:0,
+      boardTexture:ev.info?ev.info.boardTexture:null,
+      debugVars:ev.debug||null,
+      replayed:false};
+    setLog(function(p){return p.concat([logEntry]);});
+    // If in replay mode and user got it right, mark original mistake as replayed
+    if(replayMode&&ev.rating==="green"&&scenario.seed!=null){
+      setLog(function(p){return p.map(function(e){
+        if(e.seed===scenario.seed&&e.rating==="red"&&!e.replayed)return Object.assign({},e,{replayed:true});
+        return e;
+      });});
+    }
+    // Mistake mode: record result
+    if(mistakeMode&&mistakeIndex<5){
+      setMistakeResults(function(prev){var next=prev.slice();next[mistakeIndex]=ev.rating==="green"?"green":"red";return next;});
+      if(ev.rating==="green"&&scenario.seed!=null){
+        setLog(function(p){return p.map(function(e){
+          if(e.seed===scenario.seed&&e.rating==="red"&&!e.replayed)return Object.assign({},e,{replayed:true});
+          return e;
+        });});
+      }
+    }
+  },[scenario,handNum,settings.showPct,replayMode,mistakeMode,mistakeIndex]);
 
   var getActs=function(){
     if(!scenario)return[];
     if(scenario.street==="preflop"){
       if(scenario.preflopSit==="vs_raise")return["Fold","Call","3-Bet"];
-      // Open situation: BB can check (already in the pot), others fold/raise
       if(scenario.pos==="BB")return["Check","Raise"];
       return["Fold","Raise"];
     }
@@ -1375,8 +451,8 @@ export default function PokerTrainer(){
 
   var exportCSV=useCallback(function(){
     if(!log.length)return;
-    var lines=["hand,pos,cards,board,pot,bet,street,situation,opp,action,correct,rating,ev"];
-    for(var i=0;i<log.length;i++){var e=log[i];lines.push([e.hand,e.pos,e.cards,'"'+e.board+'"',e.pot,e.bet,e.street,e.situation,e.opp,e.action,e.correct,e.rating,e.ev.toFixed(1)].join(","));}
+    var lines=["hand,pos,cards,cardsExact,board,pot,bet,street,situation,opp,action,correct,rating,ev,seed"];
+    for(var i=0;i<log.length;i++){var e=log[i];lines.push([e.hand,e.pos,e.cards,'"'+(e.cardsExact||"")+'"','"'+e.board+'"',e.pot,e.bet,e.street,e.situation,e.opp,e.action,e.correct,e.rating,e.ev.toFixed(1),e.seed!=null?encodeSeed(e.seed):""].join(","));}
     navigator.clipboard.writeText(lines.join("\n")).catch(function(){});
     setCsvCopied(true);setTimeout(function(){setCsvCopied(false);},2000);
   },[log]);
@@ -1404,29 +480,28 @@ export default function PokerTrainer(){
 
   var exportMD=useCallback(function(){
     if(!log.length)return;
-    var hd="| # | Pos | Hand | Board | Action | Correct | Grade | EV |\n|---|-----|------|-------|--------|---------|-------|----|\n";
+    var hd="| # | Pos | Hand | Board | Action | Correct | Grade | BB |\n|---|-----|------|-------|--------|---------|-------|----|\n";
     for(var i=0;i<log.length;i++){var e=log[i];var ic=e.rating==="green"?"OK":e.rating==="yellow"?"~":"X";hd+="| "+e.hand+" | "+e.pos+" | "+e.cards+" | "+e.board+" | "+e.action+" | "+e.correct+" | "+ic+" | "+(e.ev>0?"+":"")+e.ev.toFixed(1)+" |\n";}
     navigator.clipboard.writeText(hd).catch(function(){});setCopied(true);setTimeout(function(){setCopied(false);},2000);
   },[log]);
 
   // ═══════ MENU ═══════
   if(screen==="menu"){
-    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:T.bg,...F,padding:20}}>
-      <div style={{maxWidth:T.maxW,width:"100%",textAlign:"center"}}>
+    return <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"space-between",background:T.bg,...F,padding:20}}>
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",maxWidth:T.maxW,width:"100%",textAlign:"center"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:8}}>
           <div style={{width:40,height:1,background:T.border}}/><div style={{width:5,height:5,background:T.gold,transform:"rotate(45deg)"}}/><div style={{width:40,height:1,background:T.border}}/>
         </div>
         <div style={{fontSize:11,letterSpacing:"0.3em",color:T.textDim,textTransform:"uppercase",marginBottom:4}}>Poker</div>
         <h1 style={{fontSize:36,fontWeight:T.weight,margin:"0 0 4px",color:T.text}}>TRAINER</h1>
-        <div style={{width:50,height:2,background:T.gold,margin:"12px auto 28px"}}/>
-        <div style={{display:"flex",gap:10,justifyContent:"center",marginBottom:28}}>
-          {[3,6].map(function(n){return <button key={n} onClick={function(){setTableSize(n);}} style={{padding:"10px 28px",borderRadius:20,cursor:"pointer",border:tableSize===n?"2px solid "+T.gold:"2px solid "+T.border,background:tableSize===n?T.gold+"18":"transparent",color:tableSize===n?T.goldDark:T.textMid,...F,fontSize:14}}>{n}-max</button>;})}
-        </div>
-        <button onClick={function(){start(false);}} style={{padding:"16px 56px",borderRadius:24,border:"none",cursor:"pointer",background:T.gold,color:"#fff",...F,fontSize:16}}>DEAL</button>
+        <div style={{width:50,height:2,background:T.gold,margin:"12px auto 32px"}}/>
+        <button onClick={function(){start(false);}} style={{padding:"16px 56px",borderRadius:24,border:"none",cursor:"pointer",background:T.gold,color:"#fff",...F,fontSize:16,marginBottom:12}}>PLAY</button>
+        <button onClick={function(){setScreen("settings");}} style={{padding:"12px 36px",borderRadius:20,border:"1.5px solid "+T.border,background:"transparent",color:T.textMid,cursor:"pointer",...F,fontSize:14}}>SETTINGS</button>
         {log.length>0 && <button onClick={function(){persist(log);setScreen("stats");}} style={{display:"block",margin:"16px auto 0",padding:"8px 22px",borderRadius:16,border:"1.5px solid "+T.border,background:"transparent",color:T.textMid,...F,fontSize:12,cursor:"pointer"}}>{"Session Stats ("+log.length+") →"}</button>}
         {lifetime.totalHands>0 && <div style={{marginTop:24,fontSize:12,color:T.textDim,...F}}>{lifetime.totalHands+" hands · "+Math.round(lifetime.greens/lifetime.totalHands*100)+"% · "+lifetime.sessions+" sessions"}</div>}
-        <button onClick={function(){setScreen("settings");}} style={{display:"block",margin:"20px auto 0",background:"none",border:"none",color:T.textDim,fontSize:12,cursor:"pointer",...F,letterSpacing:"0.06em"}}>{"⚙ SETTINGS"}</button>
-        <button onClick={function(){var r=debugRun(100,tableSize);setDebugData(r);setScreen("debug");}} style={{display:"block",margin:"12px auto 0",background:"none",border:"none",color:T.textDim,fontSize:11,cursor:"pointer",...F,letterSpacing:"0.04em",opacity:0.5}}>{"DEBUG (100 hands)"}</button>
+      </div>
+      <div style={{textAlign:"center",paddingBottom:8}}>
+        <button onClick={function(){var r=debugRun(100,tableSize);setDebugData(r);setScreen("debug");}} style={{background:"none",border:"none",color:T.textDim,fontSize:11,cursor:"pointer",...F,letterSpacing:"0.04em",opacity:0.4}}>{"DEBUG"}</button>
       </div>
     </div>;
   }
@@ -1446,7 +521,7 @@ export default function PokerTrainer(){
         {!st ? <p style={{color:T.textMid,textAlign:"center"}}>No data yet.</p> : <>
           <div style={pnl}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
-              {[{l:"Hands",v:st.total,c:T.text},{l:"Accuracy",v:Math.round(st.greens/st.total*100)+"%",c:T.green},{l:"EV",v:(st.totalEv>=0?"+":"")+st.totalEv.toFixed(1),c:st.totalEv>=0?T.green:T.red},{l:"Stack",v:stack.toFixed(1),c:stack>=100?T.green:T.red}].map(function(d,i){return <div key={i} style={{textAlign:"center"}}><div style={{fontSize:22,...F,color:d.c}}>{d.v}</div><div style={{fontSize:10,fontWeight:T.weight,color:T.textDim,textTransform:"uppercase"}}>{d.l}</div></div>;})}
+              {[{l:"Hands",v:st.total,c:T.text},{l:"Accuracy",v:Math.round(st.greens/st.total*100)+"%",c:T.green},{l:"BB",v:(st.totalEv>=0?"+":"")+st.totalEv.toFixed(1),c:st.totalEv>=0?T.green:T.red},{l:"Stack",v:stack.toFixed(1),c:stack>=100?T.green:T.red}].map(function(d,i){return <div key={i} style={{textAlign:"center"}}><div style={{fontSize:22,...F,color:d.c}}>{d.v}</div><div style={{fontSize:10,fontWeight:T.weight,color:T.textDim,textTransform:"uppercase"}}>{d.l}</div></div>;})}
             </div>
             <div style={{display:"flex",gap:2,height:3,borderRadius:2,overflow:"hidden",background:T.creamBorder}}>
               <div style={{width:st.greens/st.total*100+"%",background:T.green}}/>
@@ -1458,37 +533,66 @@ export default function PokerTrainer(){
             <div style={{fontSize:10,fontWeight:T.weight,color:T.textDim,textTransform:"uppercase",marginBottom:8}}>By Street</div>
             {Object.entries(st.byStreet).map(function(entry){var s=entry[0],d=entry[1];return <div key={s} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid "+T.creamBorder,fontSize:13,...F}}><span>{s}</span><div style={{display:"flex",gap:14}}><span style={{color:T.textDim}}>{d.total}</span>{d.mistakes>0&&<span style={{color:T.red}}>{d.mistakes+" err"}</span>}<span style={{color:d.ev>=0?T.green:T.red,minWidth:45,textAlign:"right"}}>{(d.ev>=0?"+":"")+d.ev.toFixed(1)}</span></div></div>;})}
           </div>
-          {log.length>0&&<div style={pnl}>
-            <div style={{fontSize:10,fontWeight:T.weight,color:T.textDim,textTransform:"uppercase",marginBottom:10}}>{"Last "+Math.min(log.length,10)+" Hands"}</div>
-            {log.slice(-10).reverse().map(function(e,i){
-              var rColor=e.rating==="green"?T.green:e.rating==="yellow"?T.gold:T.red;
-              var isCorrect=e.action===e.correct;
-              var isLast=i===Math.min(log.length,10)-1;
-              return <div key={i} style={{borderLeft:"3px solid "+rColor,paddingLeft:10,marginBottom:isLast?0:12,paddingBottom:isLast?0:12,borderBottom:isLast?"none":"1px solid "+T.creamBorder}}>
-                <div style={{display:"flex",flexWrap:"wrap",gap:"0 6px",alignItems:"baseline",marginBottom:3,...F,fontSize:12,fontWeight:700,color:T.text}}>
-                  <span style={{color:T.textDim,fontWeight:500}}>{"#"+e.hand}</span>
-                  <span style={{color:T.textDim}}>{"·"}</span>
-                  <span>{e.street}</span>
-                  <span style={{color:T.textDim}}>{"·"}</span>
-                  <span style={{color:T.pos[e.pos]||T.gold}}>{e.pos}</span>
-                  <span style={{color:T.textDim}}>{"·"}</span>
-                  <span>{e.cards}</span>
-                  <span style={{color:T.textDim}}>{"·"}</span>
-                  <span style={{color:T.textDim,fontWeight:500}}>{e.board}</span>
-                </div>
-                <div style={{display:"flex",flexWrap:"wrap",gap:"0 6px",alignItems:"baseline",marginBottom:4,...F,fontSize:11}}>
-                  <span style={{color:e.oppColor||T.textMid}}>{(e.oppEmoji||"")+" "+(e.opp||"")+" player"}</span>
-                  <span style={{color:T.textDim}}>{"·"}</span>
-                  <span style={{color:isCorrect?T.green:T.red,fontWeight:700}}>{e.action}</span>
-                  {!isCorrect&&<><span style={{color:T.textDim}}>{"→"}</span><span style={{color:T.green,fontWeight:700}}>{e.correct}</span></>}
-                  <span style={{color:T.textDim}}>{"·"}</span>
-                  <span style={{color:e.ev>=0?T.green:T.red,fontWeight:600}}>{(e.ev>=0?"+":"")+e.ev.toFixed(1)+" EV"}</span>
-                </div>
-                {e.narrative&&<div style={{fontSize:11,color:T.textDim,fontStyle:"italic",marginBottom:3,lineHeight:1.5,fontWeight:500}}>{e.narrative}</div>}
-                {e.explanation&&<div style={{fontSize:11,color:T.textMid,lineHeight:1.55,fontWeight:500}}>{e.explanation}</div>}
+          {log.length>0&&<>
+            {/* Filter + Replay buttons */}
+            <div style={{display:"flex",gap:8,marginBottom:10}}>
+              <button onClick={function(){setShowMistakesOnly(!showMistakesOnly);}} style={{flex:1,padding:"8px 12px",borderRadius:16,border:"1.5px solid "+(showMistakesOnly?T.red+"40":T.border),cursor:"pointer",background:showMistakesOnly?T.red+"12":"transparent",color:showMistakesOnly?T.red:T.textMid,...F,fontSize:11}}>{showMistakesOnly?"Showing Mistakes":"Mistakes Only"}</button>
+              {(function(){var mist=log.filter(function(e){return e.rating==="red"&&!e.replayed&&e.seed!=null;});return mist.length>=5?<button onClick={startMistakeMode} style={{flex:1,padding:"8px 12px",borderRadius:16,border:"1.5px solid "+T.red+"40",cursor:"pointer",background:T.red+"12",color:T.red,...F,fontSize:11}}>{"Mistakes Mode ("+mist.length+")"}</button>:null;})()}
+            </div>
+            {(function(){
+              var displayLog=showMistakesOnly?log.filter(function(e){return e.rating==="red";}):log;
+              var shown=displayLog.slice(-20).reverse();
+              return shown.length>0&&<div style={pnl}>
+                <div style={{fontSize:10,fontWeight:T.weight,color:T.textDim,textTransform:"uppercase",marginBottom:10}}>{showMistakesOnly?"Mistakes ("+displayLog.length+")":"Last "+shown.length+" Hands"}</div>
+                {shown.map(function(e,i){
+                  var rColor=e.rating==="green"?T.green:e.rating==="yellow"?T.gold:T.red;
+                  var isCorrect=e.action===e.correct;
+                  var isLast=i===shown.length-1;
+                  var cardDisplay=e.cardsExact||e.cards;
+                  return <div key={i} style={{borderLeft:"3px solid "+rColor,paddingLeft:10,marginBottom:isLast?0:12,paddingBottom:isLast?0:12,borderBottom:isLast?"none":"1px solid "+T.creamBorder}}>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:"0 6px",alignItems:"baseline",marginBottom:3,...F,fontSize:12,fontWeight:700,color:T.text}}>
+                      <span style={{color:T.textDim,fontWeight:500}}>{"#"+e.hand}</span>
+                      <span style={{color:T.textDim}}>{"·"}</span>
+                      <span>{e.street}</span>
+                      <span style={{color:T.textDim}}>{"·"}</span>
+                      <span style={{color:T.pos[e.pos]||T.gold}}>{e.pos}</span>
+                      <span style={{color:T.textDim}}>{"·"}</span>
+                      <span>{cardDisplay.split("").map(function(ch,ci){
+                        if(ch==="\u2665"||ch==="\u2666")return <span key={ci} style={{color:"#c0392b"}}>{ch}</span>;
+                        return <span key={ci}>{ch}</span>;
+                      })}</span>
+                      <span style={{color:T.textDim}}>{"·"}</span>
+                      <span style={{color:T.textDim,fontWeight:500}}>{e.board}</span>
+                      {e.boardTexture&&<span style={{fontSize:9,color:e.boardTexture.texture==="wet"?"#5dade2":e.boardTexture.texture==="dry"?"#e67e22":"#95a5a6",fontWeight:600,marginLeft:2}}>{e.boardTexture.texture}</span>}
+                    </div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:"0 6px",alignItems:"baseline",marginBottom:4,...F,fontSize:11}}>
+                      <span style={{color:e.oppColor||T.textMid}}>{(e.oppEmoji||"")+" "+(e.opp||"")+" player"}</span>
+                      <span style={{color:T.textDim}}>{"·"}</span>
+                      <span style={{color:isCorrect?T.green:T.red,fontWeight:700}}>{e.action}</span>
+                      {!isCorrect&&<><span style={{color:T.textDim}}>{"→"}</span><span style={{color:T.green,fontWeight:700}}>{e.correct}</span></>}
+                      <span style={{color:T.textDim}}>{"·"}</span>
+                      <span style={{color:e.ev>=0?T.green:T.red,fontWeight:600}}>{(e.ev>=0?"+":"")+e.ev.toFixed(1)+" BB"}</span>
+                      {e.closeSpot&&<span style={{fontSize:9,color:T.gold,fontWeight:700}}>{"CLOSE"}</span>}
+                      {e.drawOuts>0&&<span style={{fontSize:9,color:"#5dade2",fontWeight:600}}>{e.drawOuts+" outs"}</span>}
+                    </div>
+                    {e.narrative&&<div style={{fontSize:11,color:T.textDim,fontStyle:"italic",marginBottom:3,lineHeight:1.5,fontWeight:500}}>{e.narrative}</div>}
+                    {e.explanation&&<div style={{fontSize:11,color:T.textMid,lineHeight:1.55,fontWeight:500}}>{e.explanation}</div>}
+                    {e.seed!=null&&<div style={{fontSize:9,color:"#7abfff",fontFamily:"monospace",marginTop:3,fontWeight:600,cursor:"pointer",display:"inline-block"}} onClick={function(){navigator.clipboard.writeText(encodeSeed(e.seed)).catch(function(){});}}>{encodeSeed(e.seed)}</div>}
+                    {settings.showDebug&&e.debugVars&&<div style={{fontSize:10,color:T.textDim,fontFamily:"monospace",marginTop:4,lineHeight:1.7,background:T.bg,padding:"6px 8px",borderRadius:4}}>
+                      {e.equity!=null&&<div>{"Equity: "+Math.round(e.equity*100)+"%"}</div>}
+                      {e.potOdds!=null&&<div>{"Pot Odds: "+Math.round(e.potOdds*100)+"%"}</div>}
+                      {e.gap!=null&&<div>{"Gap: "+(e.gap>=0?"+":"")+Math.round(e.gap*100)+"%"}</div>}
+                      {e.category&&<div>{"Hand: "+e.category+(e.strength!=null?" ("+Math.round(e.strength*100)+"%)":"")+(e.handDesc?" — "+e.handDesc:"")}</div>}
+                      {e.debugVars.betRangeSize!=null&&<div>{"Bet Range: "+e.debugVars.betRangeSize+" combos"}</div>}
+                      {e.debugVars.checkRangeSize!=null&&<div>{"Check Range: "+e.debugVars.checkRangeSize+" combos"}</div>}
+                      {e.debugVars.callRangeSize!=null&&<div>{"Call Range: "+e.debugVars.callRangeSize+" combos"}</div>}
+                      {e.debugVars.rangeFallback&&<div style={{color:T.red}}>{"Range Fallback (level "+e.debugVars.rangeFallbackLevel+")"}</div>}
+                    </div>}
+                  </div>;
+                })}
               </div>;
-            })}
-          </div>}
+            })()}
+          </>}
           <div style={{display:"flex",gap:8,marginBottom:8}}>
             <button onClick={exportMD} style={{flex:1,padding:12,borderRadius:20,border:"1.5px solid "+T.border,cursor:"pointer",background:copied?T.green+"16":T.panel,color:copied?T.green:T.text,...F,fontSize:13}}>{copied?"✓ Copied MD":"Copy MD"}</button>
             <button onClick={exportCSV} style={{flex:1,padding:12,borderRadius:20,border:"1.5px solid "+T.border,cursor:"pointer",background:csvCopied?T.green+"16":T.panel,color:csvCopied?T.green:T.text,...F,fontSize:13}}>{csvCopied?"✓ Copied CSV":"Copy CSV"}</button>
@@ -1517,7 +621,6 @@ export default function PokerTrainer(){
   if(screen==="debug"&&debugData){
     var summary=debugSummary(debugData);
     var csv=debugToCSV(debugData);
-    var dbCopied=false;
     return <div style={{minHeight:"100vh",background:T.bg,...F,padding:16,display:"flex",flexDirection:"column",alignItems:"center"}}>
       <div style={{width:"100%",maxWidth:T.maxW}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -1592,13 +695,31 @@ export default function PokerTrainer(){
               <div style={toggleDot(settings.showPreEq)}/>
             </button>
           </div>
-          <div style={{...toggleStyle,borderBottom:"none"}}>
+          <div style={toggleStyle}>
             <div>
               <div style={{fontSize:14,color:T.text,...F}}>Show hand info in narrative</div>
               <div style={{fontSize:12,color:T.textDim,fontWeight:500,marginTop:2}}>Appends "You're holding X, plus Y draw." to each scenario</div>
             </div>
             <button onClick={function(){toggleSetting("showHandInfo");}} style={toggleBtn(settings.showHandInfo)}>
               <div style={toggleDot(settings.showHandInfo)}/>
+            </button>
+          </div>
+          <div style={toggleStyle}>
+            <div>
+              <div style={{fontSize:14,color:T.text,...F}}>Show opponent hands</div>
+              <div style={{fontSize:12,color:T.textDim,fontWeight:500,marginTop:2}}>Display likely opponent hands on mistakes and close spots</div>
+            </div>
+            <button onClick={function(){toggleSetting("showOppHands");}} style={toggleBtn(settings.showOppHands)}>
+              <div style={toggleDot(settings.showOppHands)}/>
+            </button>
+          </div>
+          <div style={{...toggleStyle,borderBottom:"none"}}>
+            <div>
+              <div style={{fontSize:14,color:T.text,...F}}>Show debug variables</div>
+              <div style={{fontSize:12,color:T.textDim,fontWeight:500,marginTop:2}}>Show internal engine data (equity, ranges, pot odds) in hand history</div>
+            </div>
+            <button onClick={function(){toggleSetting("showDebug");}} style={toggleBtn(settings.showDebug)}>
+              <div style={toggleDot(settings.showDebug)}/>
             </button>
           </div>
         </div>
@@ -1623,8 +744,6 @@ export default function PokerTrainer(){
 
   var halfSeat=T.seat/2;
 
-  // Determine what the table "bet row" should display
-  // Post-flop: depends on scenario type
   var showOppAction=false;
   var oppBetAmount=0;
   var oppChecked=false;
@@ -1634,7 +753,6 @@ export default function PokerTrainer(){
     }else if(scenario.postflopSit==="ip_vs_check"){
       showOppAction=true;oppChecked=true;
     }else{
-      // oop_first_to_act: no opponent action to show
       showOppAction=false;
     }
   }
@@ -1642,9 +760,8 @@ export default function PokerTrainer(){
   return <div onClick={function(){setTipState(null);}} style={{minHeight:"100vh",background:T.bg,...F,padding:T.pagePad+"px 16px",display:"flex",flexDirection:"column",alignItems:"center"}}>
     <div style={{width:"100%",maxWidth:T.maxW}}>
 
-      {/* TOOLTIP — Wikipedia-style popup near the term */}
+      {/* TOOLTIP */}
       {tipState && <div style={{position:"fixed",left:Math.max(16,Math.min(tipState.x,screenW-16)),top:tipState.y,transform:tipState.below?"translateX(-50%)":"translate(-50%,-100%)",maxWidth:Math.min(280,screenW-32),background:"#fff",border:"1px solid "+T.border,borderRadius:10,padding:"10px 14px",fontSize:12,lineHeight:1.55,color:T.text,fontWeight:500,fontFamily:T.font,boxShadow:"0 4px 20px rgba(0,0,0,0.14)",zIndex:200,pointerEvents:"none"}}>{tipState.text}</div>}
-
 
       {/* HEADER */}
       <div style={{background:T.panel,borderRadius:T.headerR,padding:dynHeaderPad+"px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,border:"1px solid "+T.border}}>
@@ -1654,6 +771,8 @@ export default function PokerTrainer(){
           <span onMouseEnter={function(e){showTip(e,GLOSSARY["BB_unit"]);}} onMouseLeave={function(){setTipState(null);}} onClick={function(e){showTip(e,GLOSSARY["BB_unit"]);}} style={{cursor:"help"}}><Chip size={T.chipHeader}/></span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
+          {replayMode&&!mistakeMode&&<span style={{fontSize:10,color:"#7abfff",fontWeight:700,letterSpacing:"0.04em"}}>{"REPLAY "+(replayTotal-replayQueue.length)+"/"+replayTotal}</span>}
+          {mistakeMode&&<span style={{fontSize:10,color:T.red,fontWeight:700,letterSpacing:"0.04em"}}>MISTAKES</span>}
           <span style={{fontSize:12,color:T.textDim}}>{"#"+handNum}</span>
           <button onClick={function(){persist(log);setScreen("stats");}} style={{background:"none",border:"none",color:T.textMid,fontSize:12,cursor:"pointer",...F,padding:0}}>{"STATS ▸"}</button>
         </div>
@@ -1680,13 +799,18 @@ export default function PokerTrainer(){
         </div>
 
         {/* TABLE */}
-        <div style={{height:TABLE_H,background:T.table,borderRadius:T.tableR,border:"3px solid "+T.tableBorder,boxShadow:"0 4px 24px rgba(0,0,0,0.12),inset 0 0 40px rgba(0,0,0,0.08)",display:"flex",flexDirection:"column",alignItems:"center",paddingTop:T.tableTopPad,paddingBottom:T.tableBotPad,paddingLeft:T.tablePadX,paddingRight:T.tablePadX}}>
+        <div style={{height:TABLE_H,background:T.table,borderRadius:T.tableR,border:"3px solid "+T.tableBorder,boxShadow:"0 4px 24px rgba(0,0,0,0.12),inset 0 0 40px rgba(0,0,0,0.08)",display:"flex",flexDirection:"column",alignItems:"center",paddingTop:T.tableTopPad,paddingBottom:T.tableBotPad,paddingLeft:T.tablePadX,paddingRight:T.tablePadX,position:"relative"}}>
 
-          {/* Row 1: Bet/Check pill or first-to-act indicator */}
+          {/* Row 1: Bet/Check pill */}
           <div style={{height:T.betRowH,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             {scenario.street!=="preflop" ? (
               showOppAction ? (
-                oppBetAmount>0 ?
+                oppThinking ?
+                  <div style={{background:"rgba(0,0,0,0.2)",borderRadius:T.pillR,padding:T.pillPY+"px "+T.pillPX+"px",display:"flex",alignItems:"center",gap:7}}>
+                    <span style={{fontSize:16}}>🤔</span>
+                    <span className="think-pulse" style={{fontSize:T.betFont,fontWeight:T.weight,color:"#8a9aaa",fontFamily:T.font,letterSpacing:"0.06em"}}>Thinking<span className="dot-1">.</span><span className="dot-2">.</span><span className="dot-3">.</span></span>
+                  </div>
+                : oppBetAmount>0 ?
                   <div style={{background:"rgba(0,0,0,0.2)",borderRadius:T.pillR,padding:T.pillPY+"px "+T.pillPX+"px",display:"flex",alignItems:"center",gap:6}}>
                     <span style={{fontSize:14}}>{scenario.opp.emoji}</span>
                     <BV value={oppBetAmount} fs={T.betFont} color="#e0c880" cs={T.chipPot}/>
@@ -1707,9 +831,10 @@ export default function PokerTrainer(){
           <div style={{height:T.innerGap,flexShrink:0}}/>
 
           {/* Row 2: Board cards or PREFLOP */}
+          {(function(){var nc=scenario.board.length;boardDoneRef.current=nc>0?375+(nc-1)*125+200:0;})()}
           <div style={{height:T.boardRowH,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
             {scenario.board.length>0 ?
-              <div style={{display:"flex",gap:T.bcGap}}>{scenario.board.map(function(c,i){return <CCard key={animKey+"-b"+i} card={c} board={true} animDelay={i*60} bcW={dynBcW} bcH={dynBcH} bcRank={dynBcRank} bcSuit={dynBcSuit}/>;})}</div>
+              <div style={{display:"flex",gap:T.bcGap}}>{scenario.board.map(function(c,i){return <CCard key={animKey+"-b"+i} card={c} board={true} animDelay={375+i*125} bcW={dynBcW} bcH={dynBcH} bcRank={dynBcRank} bcSuit={dynBcSuit}/>;})}</div>
             :
               <span style={{color:"#ffffffcc",fontSize:40,fontWeight:T.weight,letterSpacing:"0.15em",position:"relative",top:"-10px"}}>PREFLOP</span>
             }
@@ -1723,6 +848,26 @@ export default function PokerTrainer(){
               <BV value={scenario.potSize} fs={T.potFont} color="#e8d090" cs={T.chipPot}/>
             </div>
           </div>
+
+          {/* Seed display — bottom-left of table */}
+          <div style={{position:"absolute",bottom:6,left:T.tablePadX*2,display:"flex",alignItems:"center",gap:2}}>
+            <input value={seedInput} onChange={function(e){setSeedInput(e.target.value.toUpperCase());}} onKeyDown={function(e){if(e.key==="Enter")replaySeed(seedInput);}} style={{background:"transparent",border:"none",color:"#7abfff",fontSize:9,fontFamily:"monospace",fontWeight:600,width:56,padding:0,outline:"none",letterSpacing:"0.06em"}} spellCheck="false"/>
+            <button onClick={function(){replaySeed(seedInput);}} style={{background:"none",border:"none",color:"#7abfff",fontSize:10,cursor:"pointer",padding:0,lineHeight:1,opacity:0.8}}>{"▶"}</button>
+          </div>
+
+          {/* Mistake mode — 5 circles bottom-right */}
+          {mistakeMode && <div style={{position:"absolute",bottom:8,right:T.tablePadX*2,display:"flex",alignItems:"center",gap:5}}>
+            {mistakeResults.map(function(r,i){
+              var bg=r==="green"?T.green:r==="red"?T.red:"rgba(255,255,255,0.15)";
+              var bdr=i===mistakeIndex&&r==null?"2px solid rgba(255,255,255,0.6)":"2px solid transparent";
+              return <div key={i} style={{width:10,height:10,borderRadius:5,background:bg,border:bdr,transition:"background 0.3s, border 0.3s"}}/>;
+            })}
+          </div>}
+
+          {/* Mistake mode — flawless celebration overlay */}
+          {mistakeBonus!=null && <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",background:"rgba(74,138,90,0.95)",color:"#fff",padding:"14px 24px",borderRadius:10,fontSize:15,fontWeight:800,fontFamily:T.font,textAlign:"center",zIndex:100,boxShadow:"0 4px 24px rgba(0,0,0,0.3)"}}>
+            {"Flawless! +"+mistakeBonus+" BB"}
+          </div>}
         </div>
 
         {/* YOU seat */}
@@ -1743,7 +888,6 @@ export default function PokerTrainer(){
           {phase==="action" ? <div>{(function(){
             var pN=scenario.pos,oE=scenario.opp.emoji,oN=scenario.opp.name;
             var oP=scenario.oppPos;
-            // Clickable opponent name with tooltip
             var oppGloss=GLOSSARY[oN]||"";
             var oppSpan=<span onMouseEnter={oppGloss?function(e){showTip(e,oppGloss);}:null} onMouseLeave={function(){setTipState(null);}} onClick={oppGloss?function(e){e.stopPropagation();showTip(e,oppGloss);}:null} style={{color:scenario.opp.color,fontWeight:T.weight,cursor:oppGloss?"help":"default"}}>{oE+" "+oN+" player"}</span>;
             var hI="";
@@ -1755,7 +899,6 @@ export default function PokerTrainer(){
               }else{hI=" You're holding "+nota+".";}
             }
 
-            // Pre-decision equity hint
             var preEqLine=null;
             if(settings.showPreEq&&scenario.board.length>0){
               var pInfo=classify(scenario.playerHand,scenario.board);
@@ -1763,26 +906,27 @@ export default function PokerTrainer(){
               preEqLine=<div style={{fontSize:12,color:T.textDim,marginTop:6,fontWeight:500,fontStyle:"italic"}}>{"Hand strength: ~"+pEq+"% vs estimated range"}</div>;
             }
 
-            // Preflop narratives — clean position descriptions
             if(scenario.street==="preflop"){
               if(scenario.preflopSit==="vs_raise")return <span>{oppSpan}{" raises to "}<BV value={2.5} fs={14} color={T.goldDark} cs={16}/>{" from "}<PB pos={oP} showTip={showTip}/>{". You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}</span>;
               return <span>{"You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}</span>;
             }
 
-            // Post-flop narratives
             var sit=scenario.postflopSit;
+            var sp=oppThinking
+              ?{filter:"blur(5px)",opacity:0.25,transition:"none",display:"inline"}
+              :{filter:"blur(0px)",opacity:1,transition:"filter 0.5s ease-out, opacity 0.5s ease-out",display:"inline"};
 
             if(sit==="ip_vs_bet"){
-              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/>{" bets "}<BV value={scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" into a "}<BV value={scenario.potSize-scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" pot. You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}{preEqLine}</span>;
+              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/><span style={sp}>{" bets "}<BV value={scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" into a "}<BV value={scenario.potSize-scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" pot"}</span>{". You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}{preEqLine}</span>;
             }
             if(sit==="ip_vs_check"){
-              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/>{" checks. You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}{preEqLine}</span>;
+              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/><span style={sp}>{" checks"}</span>{". You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}{preEqLine}</span>;
             }
             if(sit==="oop_first_to_act"){
               return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". You act first at "}<PB pos={pN} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/>{" acts after you."}{hI}{preEqLine}</span>;
             }
             if(sit==="oop_check_then_opp_bets"){
-              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". You checked at "}<PB pos={pN} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/>{" bets "}<BV value={scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" into a "}<BV value={scenario.potSize-scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" pot."}{hI}{preEqLine}</span>;
+              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". You checked at "}<PB pos={pN} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/><span style={sp}>{" bets "}<BV value={scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" into a "}<BV value={scenario.potSize-scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" pot"}</span>{"."}{hI}{preEqLine}</span>;
             }
             return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}</span>;
           })()}</div>
@@ -1791,38 +935,49 @@ export default function PokerTrainer(){
               <span style={{display:"inline-block",padding:"4px 12px",borderRadius:4,background:feedback.rating==="green"?T.green:feedback.rating==="yellow"?T.gold:T.red,color:"#fff",fontWeight:T.weight,fontSize:13}}>
                 {feedback.rating==="green"?"✓ Correct":feedback.rating==="yellow"?"≈ Acceptable":"✗ Mistake"}
               </span>
-              {feedback.evDiff!==0 && <span style={{fontWeight:T.weight,fontSize:14,color:feedback.evDiff>=0?T.green:T.red}}>{(feedback.evDiff>=0?"+":"")+feedback.evDiff.toFixed(1)+" EV"}</span>}
+              {feedback.evDiff!==0 && <span style={{fontWeight:T.weight,fontSize:14,color:feedback.evDiff>=0?T.green:T.red}}>{(feedback.evDiff>=0?"+":"")+feedback.evDiff.toFixed(1)+" BB"}</span>}
             </div>
             {feedback.rating!=="green" && <div className="fb-anim" style={{fontSize:14,color:T.goldDark,fontWeight:T.weight,marginBottom:6}}>{"Best: "+feedback.best}</div>}
             <div className="fb-anim" style={{fontSize:13.5,lineHeight:1.7,fontWeight:500,animationDelay:"80ms"}}><NT text={feedback.explanation} showTip={showTip}/></div>
+            {((feedback.debug&&feedback.debug.mcEq!=null)||(feedback.suspectLine&&settings.showOppHands&&(feedback.rating!=="green"||feedback.debug.closeSpot))) && <div className="fb-anim" style={{animationDelay:"160ms"}}><SuspectLine hands={feedback.suspectLine} show={settings.showOppHands&&(feedback.rating!=="green"||(feedback.debug&&feedback.debug.closeSpot))} eq={feedback.debug?feedback.debug.mcEq:null} needed={feedback.debug?feedback.debug.potOdds:null} showPct={settings.showPct}/></div>}
           </>}
         </div>
       </div>
 
       {/* HAND + ACTIONS */}
       <div style={{display:"flex",gap:T.cardGap,width:"100%",alignItems:"flex-start"}}>
-        <div style={{flex:"0 0 "+T.cardSplit*100+"%",display:"flex",gap:T.cardGap,justifyContent:"center"}}>
-          {dh.map(function(c,i){return <CCard key={animKey+"-h"+i} card={c} animDelay={200+i*80} cardW={dynCardW} cardH={dynCardH} cardRank={dynCardRank} cardSuit={dynCardSuit}/>;})}
+        <div style={{flex:"0 0 65%",display:"flex",gap:T.cardGap,justifyContent:"center"}}>
+          {dh.map(function(c,i){return <CCard key={animKey+"-h"+i} card={c} animDelay={i*250} cardW={dynCardW} cardH={dynCardH} cardRank={dynCardRank} cardSuit={dynCardSuit}/>;})}
         </div>
         <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
           {phase==="action" ? actions.map(function(a){
             var passive=a==="Fold"||a==="Check";
             return <button key={a} onClick={function(){act(a);}} style={{padding:T.btnPadY+"px 4px",borderRadius:T.btnR,cursor:"pointer",border:passive?"2px solid "+T.border:"2px solid transparent",background:passive?"transparent":T.gold,color:passive?T.textMid:"#fff",...F,fontSize:T.btnFont,letterSpacing:"0.04em",transition:"transform 0.1s, background 0.2s, border-color 0.2s",...(btnFlash&&btnFlash.action===a?{background:btnFlash.rating==="green"?T.green:btnFlash.rating==="yellow"?T.gold:T.red,color:"#fff",borderColor:"transparent"}:{})}} onMouseDown={function(e){e.currentTarget.style.transform="scale(0.95)";}} onMouseUp={function(e){e.currentTarget.style.transform="scale(1)";}} onMouseLeave={function(e){e.currentTarget.style.transform="scale(1)";}}>{a.toUpperCase()}</button>;
-          }) : <button onClick={goNext} style={{padding:"12px 4px",borderRadius:T.btnR,cursor:"pointer",border:"2px solid "+T.border,background:"transparent",color:T.text,...F,fontSize:T.btnFont}}>{"NEXT →"}</button>}
+          }) : <button onClick={goNext} style={{padding:T.btnPadY+"px 4px",borderRadius:T.btnR,cursor:"pointer",border:"2px solid "+T.border,background:"transparent",color:T.text,...F,fontSize:T.btnFont}}>{"NEXT →"}</button>}
         </div>
       </div>
 
     </div>
     <style>{["*{box-sizing:border-box;margin:0;padding:0}","::-webkit-scrollbar{width:4px}","::-webkit-scrollbar-track{background:transparent}","::-webkit-scrollbar-thumb{background:"+T.border+";border-radius:2px}",
-    "@keyframes cardIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}",
-    "@keyframes boardIn{from{opacity:0;transform:scale(0.92)}to{opacity:1;transform:scale(1)}}",
+    "@keyframes cardIn{from{opacity:0;transform:translateY(40px) rotate(4deg)}to{opacity:1;transform:translateY(0) rotate(0deg)}}",
+    "@keyframes boardIn{from{opacity:0;transform:translateY(-28px) rotate(-3deg)}to{opacity:1;transform:translateY(0) rotate(0deg)}}",
     "@keyframes fadeSlideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}",
     "@keyframes badgePop{0%{transform:scale(0.85)}60%{transform:scale(1.06)}100%{transform:scale(1)}}",
     "@keyframes evPulseGreen{0%{transform:scale(1)}50%{transform:scale(1.12);color:"+T.green+"}100%{transform:scale(1)}}",
     "@keyframes evPulseRed{0%{transform:scale(1)}50%{transform:scale(1.12);color:"+T.red+"}100%{transform:scale(1)}}",
     "@keyframes btnPress{0%{transform:scale(1)}50%{transform:scale(0.95)}100%{transform:scale(1)}}",
-    ".card-anim{animation:cardIn 0.3s ease-out both}",
-    ".board-anim{animation:boardIn 0.25s ease-out both}",
+    "@keyframes dot1{0%,80%,100%{opacity:0.2}40%{opacity:1}}",
+    "@keyframes dot2{0%,80%,100%{opacity:0.2}60%{opacity:1}}",
+    "@keyframes dot3{0%,80%,100%{opacity:0.2}80%{opacity:1}}",
+    "@keyframes thinkPulse{0%,100%{opacity:0.5}50%{opacity:1}}",
+    ".dot-1{animation:dot1 1.2s infinite}",
+    ".dot-2{animation:dot2 1.2s infinite}",
+    ".dot-3{animation:dot3 1.2s infinite}",
+    ".think-pulse{animation:thinkPulse 1.8s ease-in-out infinite}",
+    "@keyframes narrIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}",
+    ".narr-anim{animation:narrIn 0.4s ease-out both}",
+    ".card-anim{animation:cardIn 0.25s ease-out both}",
+    ".board-anim{animation:boardIn 0.2s ease-out both}",
     ".fb-anim{animation:fadeSlideIn 0.3s ease-out both}",
     ".badge-anim{animation:badgePop 0.35s ease-out both}",
     ".ev-pulse-green{animation:evPulseGreen 0.5s ease-out}",

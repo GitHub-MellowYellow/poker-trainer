@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vite build)",
+      "Bash(npx vite:*)",
+      "Bash(timeout:*)",
+      "Bash(npm run build:*)",
+      "mcp__Claude_Preview__preview_start"
+    ]
+  }
+}
