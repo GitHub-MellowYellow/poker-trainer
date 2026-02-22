@@ -268,7 +268,6 @@ export function getRange(oppType,action,board,heroHole){
   return pairs.filter(function(hand){
     var info=classify(hand,board);
     var cat=info.category;
-    var hasPair=info.ev.rank>=1;
     var bigDraw=info.drawOuts>=8;
     var anyDraw=info.drawOuts>=4;
     var str=info.strength;
@@ -288,13 +287,14 @@ export function getRange(oppType,action,board,heroHole){
     }
 
     if(oppType==="aggro"){
+      var madeHand=cat!=="trash";
       if(action==="bet"){
-        return hasPair||anyDraw||info.holeVals[0]>=10;
+        return madeHand||anyDraw||info.holeVals[0]>=10;
       }
       if(action==="call"){
-        return hasPair||anyDraw;
+        return madeHand||anyDraw;
       }
-      return !hasPair&&!anyDraw&&info.holeVals[0]<10;
+      return !madeHand&&!anyDraw&&info.holeVals[0]<10;
     }
 
     // neutral/regular
@@ -574,7 +574,8 @@ export function evalPost(action,hole,board,pot,bet,opp,street,postflopSit,showPc
     else if(action==="Fold"&&best!=="Fold")evDiff=-Math.round(pot*0.15);
     else evDiff=-Math.round(pot*0.1);
   }else{
-    evDiff=-Math.round(pot*0.03);
+    // Yellow: small penalty, capped at -0.3 BB so "acceptable" feels like a nudge
+    evDiff=-Math.min(0.3, Math.round(pot*0.02*10)/10);
   }
 
   dbg.mcEq=mcEq;dbg.closeSpot=closeSpot;
@@ -707,6 +708,38 @@ export function saveSettings(s){try{localStorage.setItem(SETK,JSON.stringify(s))
 // DEBUG HARNESS — generates N random hands with full evaluation
 // ═══════════════════════════════════════════════════════════════
 
+// Derive per-action rating/evDiff from an already-resolved evaluation,
+// avoiding a second MC run that could produce a contradictory best action.
+function perActionRating(act,firstEval,isPreflop,pot,bet){
+  var best=firstEval.best;
+  var acc=firstEval.acceptable;
+  var cs=firstEval.debug?firstEval.debug.closeSpot:false;
+  var rating=act===best?"green"
+    :(cs&&acc.indexOf(act)!==-1)?"green"
+    :acc.indexOf(act)!==-1?"yellow":"red";
+  var evDiff=0;
+  if(isPreflop){
+    if(rating==="green"){
+      evDiff=(best==="Fold"||best==="Check")?0.3:best==="Call"?0.5:1.0;
+    }else if(rating==="red"){
+      evDiff=(best==="Fold"&&act!=="Fold")?-2.5:(best==="Check"&&act==="Raise")?-1.0:-1.5;
+    }else{evDiff=-0.3;}
+  }else{
+    if(rating==="green"){
+      if(best==="Fold"||act==="Fold")evDiff=+Math.max(0.3,Math.round(pot*0.02*10)/10);
+      else if(best==="Call"||act==="Call")evDiff=+Math.max(0.5,Math.round(pot*0.05*10)/10);
+      else if(["Raise","Bet"].indexOf(best)!==-1||["Raise","Bet"].indexOf(act)!==-1)
+        evDiff=+Math.max(0.8,Math.round(pot*0.08*10)/10);
+      else evDiff=+Math.max(0.3,Math.round(pot*0.02*10)/10);
+    }else if(rating==="red"){
+      if(best==="Fold"&&act!=="Fold")evDiff=-(bet||Math.round(pot*0.5));
+      else if(act==="Fold"&&best!=="Fold")evDiff=-Math.round(pot*0.15);
+      else evDiff=-Math.round(pot*0.1);
+    }else{evDiff=-Math.min(0.3,Math.round(pot*0.02*10)/10);}
+  }
+  return{rating:rating,evDiff:evDiff,best:best,acceptable:acc};
+}
+
 export function debugRun(n,tableSize){
   n=n||100;
   var positions=tableSize===6?P6:P3;
@@ -726,16 +759,20 @@ export function debugRun(n,tableSize){
       acts=sc.betSize>0?["Fold","Call","Raise"]:["Check","Bet"];
     }
 
+    // Evaluate once with acts[0] to determine best/acceptable/closeSpot via MC.
+    // Derive all other per-action ratings from that single result to prevent
+    // independent MC runs from producing contradictory bestAction/EV pairs.
+    var firstEval;
+    var isPre=sc.street==="preflop";
+    if(isPre){
+      firstEval=evalPre(acts[0],nota,sc.pos,sc.preflopSit,true);
+    }else{
+      firstEval=evalPost(acts[0],sc.playerHand,sc.board,sc.potSize,sc.betSize,sc.opp,sc.street,sc.postflopSit,true);
+    }
     var evals={};
-    for(var a=0;a<acts.length;a++){
-      var act=acts[a];
-      var ev;
-      if(sc.street==="preflop"){
-        ev=evalPre(act,nota,sc.pos,sc.preflopSit,true);
-      }else{
-        ev=evalPost(act,sc.playerHand,sc.board,sc.potSize,sc.betSize,sc.opp,sc.street,sc.postflopSit,true);
-      }
-      evals[act]=ev;
+    evals[acts[0]]=firstEval;
+    for(var a=1;a<acts.length;a++){
+      evals[acts[a]]=perActionRating(acts[a],firstEval,isPre,sc.potSize,sc.betSize);
     }
 
     var bestEv=evals[acts[0]];

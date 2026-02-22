@@ -11,6 +11,7 @@ var CORRECT_FOLD = ["Good fold.", "Right fold.", "Disciplined.", "Smart fold.", 
 var CORRECT_CHECK = ["Good check.", "Right check.", "Correct.", "Solid.", "Smart."];
 var CORRECT_BET = ["Good bet.", "Right bet.", "Correct.", "Solid.", "Well played."];
 var CORRECT_RAISE = ["Good raise.", "Solid.", "Correct.", "Right raise.", "Well played."];
+var CLOSE_CORRECT_OPENERS = ["Edge case.", "Razor-thin.", "Close call.", "Marginal spot."];
 
 function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -108,7 +109,7 @@ function oppNote(opp, facingBet, best) {
       if (best === "Raise") return "Aggro player's wide range — punish it with a raise.";
       return "";
     }
-    if (best === "Fold") return "Not enough to continue against this range.";
+    if (best === "Fold") return ""; // main narrative already covers range assessment
     if (best === "Call") return "Enough equity to call against a balanced range.";
     if (best === "Raise") return "Strong enough to raise for value.";
     return "";
@@ -168,6 +169,7 @@ function buildPostflop(ctx) {
   var isR = street === "river";
 
   var hd = info.handDesc;
+  var origHd = hd;
   var draws = isR ? [] : info.draws;
   var drawOuts = isR ? 0 : info.drawOuts;
   var dt = draws.map(function(d) { return d.desc; }).join(" and ");
@@ -217,7 +219,8 @@ function buildPostflop(ctx) {
     // FOLD
     if (best === "Fold") {
       if (drawOuts > 0) {
-        return hd + " plus " + dt + tp + " — draws don't close the gap." + eqStr + " " + oppNote(opp, true, best);
+        var foldCore = origHd === "Nothing" ? hd : origHd + " plus " + dt;
+        return foldCore + tp + " — draws don't close the gap." + eqStr + " " + oppNote(opp, true, best);
       }
       if (isR) {
         return hd + tp + " — not strong enough to beat their value range. Nothing left to draw to. " + oppNote(opp, true, best);
@@ -234,7 +237,8 @@ function buildPostflop(ctx) {
         return weakHandBridge(info, opp, mcEq, true) + (sizing ? " " + sizing : "") + eqStr;
       }
       if (drawOuts >= 6) {
-        return hd + " plus " + dt + tp + " — draws give you a solid edge over the price." + eqStr;
+        var callCore = origHd === "Nothing" ? hd : origHd + " plus " + dt;
+        return callCore + tp + " — draws give you a solid edge over the price." + eqStr;
       }
       return hd + tp + " — " + eqWord(mcEq, needed) + "." + (sizing ? " " + sizing : "") + eqStr + " " + oppNote(opp, true, best);
     }
@@ -253,7 +257,7 @@ function buildPostflop(ctx) {
   if (best === "Bet") {
     if (draws.length > 0 && ["good", "strong", "monster"].indexOf(info.category) === -1) {
       // semi-bluff
-      return hd + tp + dp + " — not much yet, but outs if called. Take it down or improve.";
+      return hd + tp + (origHd !== "Nothing" ? dp : "") + " — not much yet, but outs if called. Take it down or improve.";
     }
     if (recon === "weak_hand_strong_eq") {
       return weakHandBridge(info, opp, mcEq, false) + " Worse hands will call." + eqStr;
@@ -293,12 +297,36 @@ function frameMistake(ctx, core) {
   return best + " here. " + core;
 }
 
+function frameCloseCorrect(ctx, core) {
+  return pick(CLOSE_CORRECT_OPENERS) + " " + core;
+}
+
+function frameCloseAcceptable(ctx, core) {
+  var best = ctx.bestAction;
+  var user = ctx.userAction;
+  return "Close enough. " + best + " is marginally better, but " + user + " works here. " + core;
+}
+
+function frameCloseMistake(ctx, core) {
+  var best = ctx.bestAction;
+  var user = ctx.userAction;
+  return best + " here — it's a close spot, but " + user + " isn't one of the options. " + core;
+}
+
 // ── Main entry point ────────────────────────────────────────
 
 export function buildNarrative(ctx) {
   var core = buildPostflop(ctx);
   // Clean up double spaces
   core = core.replace(/  +/g, " ").trim();
+
+  if (ctx.closeSpot) {
+    if (ctx.rating === "green" && ctx.userAction === ctx.bestAction)
+      return frameCloseCorrect(ctx, core);
+    if (ctx.rating === "green")
+      return frameCloseAcceptable(ctx, core);
+    return frameCloseMistake(ctx, core);
+  }
 
   if (ctx.rating === "green") return frameCorrect(ctx, core);
   if (ctx.rating === "yellow") return frameAcceptable(ctx, core);
@@ -316,6 +344,18 @@ export function buildPreNarrative(ctx) {
   var rating = ctx.rating;
   var sn = ctx.strengthNote;
   var pl = ctx.playersLeft;
+
+  // Strip praise that contradicts a fold recommendation
+  if (best === "Fold" && sn) {
+    sn = sn.replace(/\. Playable from most positions[^.]*\./, " — but not from this position.");
+    sn = sn.replace(/Plays well from most positions[^.]*\./, "but not strong enough from " + pos + ".");
+    sn = sn.replace(/Very strong in any position\./, "but position matters here.");
+  }
+
+  // Strip fold-context warnings that contradict a raise recommendation
+  if (best === "Raise" && sn) {
+    sn = sn.replace(/ Often dominated by better hands[^.]*\./, "");
+  }
 
   var core;
 
