@@ -510,9 +510,6 @@ export default function PokerTrainer(){
         {log.length>0 && <button onClick={function(){persist(log);setScreen("stats");}} style={{display:"block",margin:"16px auto 0",padding:"8px 22px",borderRadius:16,border:"1.5px solid "+T.border,background:"transparent",color:T.textMid,...F,fontSize:12,cursor:"pointer"}}>{"Session Stats ("+log.length+") →"}</button>}
         {lifetime.totalHands>0 && <div style={{marginTop:24,fontSize:12,color:T.textDim,...F}}>{lifetime.totalHands+" hands · "+Math.round(lifetime.greens/lifetime.totalHands*100)+"% · "+lifetime.sessions+" sessions"}</div>}
       </div>
-      <div style={{textAlign:"center",paddingBottom:8}}>
-        <button onClick={function(){var r=debugRun(100,tableSize);setDebugData(r);setScreen("debug");}} style={{background:"none",border:"none",color:T.textDim,fontSize:11,cursor:"pointer",...F,letterSpacing:"0.04em",opacity:0.4}}>{"DEBUG"}</button>
-      </div>
     </div>;
   }
 
