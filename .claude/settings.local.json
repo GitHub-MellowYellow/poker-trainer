@@ -5,7 +5,8 @@
       "Bash(npx vite:*)",
       "Bash(timeout:*)",
       "Bash(npm run build:*)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npm run sim:*)"
     ]
   }
 }

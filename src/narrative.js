@@ -125,7 +125,7 @@ function oppNote(opp, facingBet, best) {
       return "";
     }
     if (best === "Bet") return "Their check signals weakness.";
-    if (best === "Check") return "Betting only gets called by better.";
+    if (best === "Check") return ""; // core already says "betting only gets called by better" — avoid duplication
     return "";
   }
 }
@@ -310,6 +310,11 @@ function frameCloseAcceptable(ctx, core) {
 function frameCloseMistake(ctx, core) {
   var best = ctx.bestAction;
   var user = ctx.userAction;
+  // Non-facing-bet check close spot: avoid saying "Bet isn't one of the options"
+  // right before the core that says "betting isn't wrong" — they contradict each other.
+  if (!ctx.bet && best === "Check") {
+    return "Close, but check is the cleaner play. " + core;
+  }
   return best + " here — it's a close spot, but " + user + " isn't one of the options. " + core;
 }
 
@@ -389,7 +394,7 @@ export function buildPreNarrative(ctx) {
   core = core.replace(/  +/g, " ").trim();
 
   if (rating === "green") {
-    var opener = best === "Fold" || best === "Check" ? pick(CORRECT_FOLD.concat(CORRECT_CHECK)) : pick(CORRECT_OPENERS);
+    var opener = openerForCorrect(best);
     return opener + " " + core;
   }
   if (rating === "yellow") {

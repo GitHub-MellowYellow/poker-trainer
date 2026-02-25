@@ -205,10 +205,15 @@ export function classify(hole,board){
       var kick2=Math.max(hv[0],hv[1]);
       if(kick2>=13){var kr2=kick2===RV[hole[0].rank]?hole[0].rank:hole[1].rank;cat="marginal";str=0.25;desc="Two Pair (on board, "+RN[kr2]+" kicker)";}
       else{cat="trash";str=0.1;desc="Two Pair (on board)";}
-    }else{
+    }else if(holePairs2.length===1){
       var bestHP=Math.max.apply(null,holePairs2);
-      if(bestHP>=bv[0]){cat="good";str=0.55;desc="Two Pair";}
-      else if(bestHP>=bv[Math.min(1,bv.length-1)]){cat="good";str=0.45;desc="Two Pair";}
+      if(bestHP>=bv[0]){cat="good";str=0.40;desc="Two Pair (top + board pair)";}
+      else if(bestHP>=bv[Math.min(1,bv.length-1)]){cat="marginal";str=0.25;desc="Two Pair (board-paired)";}
+      else{cat="weak";str=0.18;desc="Two Pair (board-paired, weak)";}
+    }else{
+      var bestHP2=Math.max.apply(null,holePairs2);
+      if(bestHP2>=bv[0]){cat="good";str=0.55;desc="Two Pair";}
+      else if(bestHP2>=bv[Math.min(1,bv.length-1)]){cat="good";str=0.45;desc="Two Pair";}
       else{cat="marginal";str=0.35;desc="Two Pair (weak)";}
     }
   }
@@ -268,33 +273,42 @@ export function getRange(oppType,action,board,heroHole){
   return pairs.filter(function(hand){
     var info=classify(hand,board);
     var cat=info.category;
-    var bigDraw=info.drawOuts>=8;
-    var anyDraw=info.drawOuts>=4;
+    var isRiver=board.length>=5;
+    var adjustedOuts=isRiver?0:info.drawOuts;
+    var bigDraw=adjustedOuts>=8;
+    var anyDraw=adjustedOuts>=4;
     var str=info.strength;
 
     if(oppType==="tight"){
+      var bLen=board.length;
       if(action==="bet"){
-        return cat==="monster"||cat==="strong"||
-               (cat==="good"&&str>=0.45)||
-               (bigDraw&&info.drawOuts>=9);
+        var goodQ=bLen<=3?(cat==="good"&&str>=0.45):
+                  (cat==="good"&&str>=0.45&&(info.ev.rank>=2||info.boardTexture.texture!=="wet"));
+        var drawQ=bLen<=3?(bigDraw&&adjustedOuts>=9):
+                  bLen===4?(adjustedOuts>=9&&cat!=="trash"&&cat!=="weak"):false;
+        return cat==="monster"||cat==="strong"||goodQ||drawQ;
       }
       if(action==="call"){
-        return cat==="monster"||cat==="strong"||cat==="good"||bigDraw;
+        var callDraw=bLen<=3?bigDraw:
+                     bLen===4?(bigDraw&&cat!=="trash"):false;
+        return cat==="monster"||cat==="strong"||cat==="good"||callDraw;
       }
-      return !(cat==="monster"||cat==="strong"||
-               (cat==="good"&&str>=0.45)||
-               (bigDraw&&info.drawOuts>=9));
+      var checkGoodQ=bLen<=3?(cat==="good"&&str>=0.45):
+                     (cat==="good"&&str>=0.45&&(info.ev.rank>=2||info.boardTexture.texture!=="wet"));
+      var checkDrawQ=bLen<=3?(bigDraw&&adjustedOuts>=9):
+                     bLen===4?(adjustedOuts>=9&&cat!=="trash"&&cat!=="weak"):false;
+      return !(cat==="monster"||cat==="strong"||checkGoodQ||checkDrawQ);
     }
 
     if(oppType==="aggro"){
       var madeHand=cat!=="trash";
       if(action==="bet"){
-        return madeHand||anyDraw||info.holeVals[0]>=10;
+        return madeHand||anyDraw||info.holeVals[0]>=12;
       }
       if(action==="call"){
         return madeHand||anyDraw;
       }
-      return !madeHand&&!anyDraw&&info.holeVals[0]<10;
+      return !madeHand&&!anyDraw&&info.holeVals[0]<12;
     }
 
     // neutral/regular
@@ -509,7 +523,8 @@ export function evalPost(action,hole,board,pot,bet,opp,street,postflopSit,showPc
     dbg.betRangeSize=betRange.length;dbg.potOdds=needed;dbg.gap=gap;
     dbg.rangeFallback=betResult.fallback;dbg.rangeFallbackLevel=betResult.fallbackLevel;
 
-    if(mcEq>=0.62&&gap>0.08){
+    var raiseWorthy=info.category==="good"||info.category==="strong"||info.category==="monster";
+    if(mcEq>=0.62&&gap>0.08&&raiseWorthy){
       best="Raise";acc=["Raise","Call"];
     }else if(gap>0.08){
       best="Call";acc=["Call"];

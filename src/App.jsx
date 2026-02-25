@@ -130,17 +130,21 @@ function CCard(props){
 // ═══════════════════════════════════════════════════════════════
 
 function EqMeter(props){
-  var eq=props.eq,needed=props.needed,showPct=props.showPct;
+  var eq=props.eq,needed=props.needed,showPct=props.showPct,showTip=props.showTip;
   if(eq==null)return null;
   var pct=Math.round(eq*100);
   var neededPct=needed!=null?Math.round(needed*100):null;
   // Color: red→orange→yellow→green based on equity
   var col=eq>=0.65?"#4a8a5a":eq>=0.50?"#7aa84a":eq>=0.35?"#c49a2a":"#b84a3a";
-  return <div style={{display:"flex",alignItems:"center",gap:6,marginLeft:"auto",flexShrink:0}}>
+  return <div style={{display:"flex",alignItems:"center",gap:6,marginLeft:"auto",flexShrink:0,cursor:"default"}}
+    onMouseEnter={showTip?function(e){showTip(e,"Your mathematical advantage. Hand strength vs. pot odds. When the bar crosses the threshold, it's a profitable play.");}:null}
+    onMouseLeave={showTip?function(){showTip(null);}:null}
+    onClick={showTip?function(e){e.stopPropagation();showTip(e,"Your mathematical advantage. Hand strength vs. pot odds. When the bar crosses the threshold, it's a profitable play.");}:null}
+  >
     <span style={{fontSize:10,color:"#8a8472",fontWeight:600}}>Edge</span>
     <div style={{position:"relative",width:70,height:7,borderRadius:0,background:"#e0d8c8",overflow:"visible"}}>
       <div style={{width:Math.min(pct,100)+"%",height:"100%",borderRadius:0,background:col,transition:"width 0.4s ease"}}/>
-      {neededPct!=null && <div style={{position:"absolute",left:Math.min(neededPct,100)+"%",top:-2,width:2,height:11,background:"#2b2b24",borderRadius:0,opacity:0.5}} title={"Break-even: "+neededPct+"%"}/>}
+      {neededPct!=null && <div style={{position:"absolute",left:Math.min(neededPct,100)+"%",top:-2,width:2,height:11,background:"#2b2b24",borderRadius:0,opacity:0.5}}/>}
     </div>
     {showPct && <span style={{fontSize:10,color:"#8a8472",fontWeight:600}}>{pct+"%"}</span>}
   </div>;
@@ -174,19 +178,23 @@ function Thermo(props){
 }
 
 function SuspectLine(props){
-  var hands=props.hands,show=props.show,eq=props.eq,needed=props.needed,showPct=props.showPct;
+  var hands=props.hands,show=props.show,eq=props.eq,needed=props.needed,showPct=props.showPct,showTip=props.showTip;
   var hasHands=show&&hands&&hands.length>0;
   var hasEq=eq!=null;
   if(!hasHands&&!hasEq)return null;
   var display=hasHands?hands.slice(0,3):[];
   return <div style={{display:"flex",gap:10,marginTop:8,paddingTop:8,borderTop:"1px solid "+T.creamBorder,alignItems:"center"}}>
     {display.map(function(h,i){
-      return <div key={i} style={{display:"flex",alignItems:"center",gap:4}}>
+      return <div key={i} style={{display:"flex",alignItems:"center",gap:4,cursor:"default"}}
+        onMouseEnter={showTip?function(e){showTip(e,"Hands in their range that currently beat you. Taller bars mean high danger; low bars confirm a safer spot.");}:null}
+        onMouseLeave={showTip?function(){showTip(null);}:null}
+        onClick={showTip?function(e){e.stopPropagation();showTip(e,"Hands in their range that currently beat you. Taller bars mean high danger; low bars confirm a safer spot.");}:null}
+      >
         <Thermo ratio={h.count/h.total}/>
         <MiniCardPair cards={h.cards}/>
       </div>;
     })}
-    {hasEq && <EqMeter eq={eq} needed={needed} showPct={showPct}/>}
+    {hasEq && <EqMeter eq={eq} needed={needed} showPct={showPct} showTip={showTip}/>}
   </div>;
 }
 
@@ -258,7 +266,9 @@ export default function PokerTrainer(){
     var x=rect.left+rect.width/2;
     var y=rect.top;
     var showBelow=y<120;
-    setTipState({text:text,x:x,y:showBelow?rect.bottom+6:y-6,below:showBelow});
+    var half=130,gap=8;
+    var cx=Math.max(gap+half,Math.min(x,window.innerWidth-gap-half));
+    setTipState({text:text,x:cx,y:showBelow?rect.bottom+6:y-6,below:showBelow});
   }
 
   var persist=useCallback(function(sl){
@@ -761,7 +771,7 @@ export default function PokerTrainer(){
     <div style={{width:"100%",maxWidth:T.maxW}}>
 
       {/* TOOLTIP */}
-      {tipState && <div style={{position:"fixed",left:Math.max(16,Math.min(tipState.x,screenW-16)),top:tipState.y,transform:tipState.below?"translateX(-50%)":"translate(-50%,-100%)",maxWidth:Math.min(280,screenW-32),background:"#fff",border:"1px solid "+T.border,borderRadius:10,padding:"10px 14px",fontSize:12,lineHeight:1.55,color:T.text,fontWeight:500,fontFamily:T.font,boxShadow:"0 4px 20px rgba(0,0,0,0.14)",zIndex:200,pointerEvents:"none"}}>{tipState.text}</div>}
+      {tipState && <div style={{position:"fixed",left:tipState.x,top:tipState.y,transform:tipState.below?"translateX(-50%)":"translate(-50%,-100%)",width:260,boxSizing:"border-box",background:"#fff",border:"1px solid "+T.border,borderRadius:10,padding:"10px 14px",fontSize:12,lineHeight:1.55,color:T.text,fontWeight:500,fontFamily:T.font,boxShadow:"0 4px 20px rgba(0,0,0,0.14)",zIndex:200,pointerEvents:"none"}}>{tipState.text}</div>}
 
       {/* HEADER */}
       <div style={{background:T.panel,borderRadius:T.headerR,padding:dynHeaderPad+"px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,border:"1px solid "+T.border}}>
@@ -939,7 +949,7 @@ export default function PokerTrainer(){
             </div>
             {feedback.rating!=="green" && <div className="fb-anim" style={{fontSize:14,color:T.goldDark,fontWeight:T.weight,marginBottom:6}}>{"Best: "+feedback.best}</div>}
             <div className="fb-anim" style={{fontSize:13.5,lineHeight:1.7,fontWeight:500,animationDelay:"80ms"}}><NT text={feedback.explanation} showTip={showTip}/></div>
-            {((feedback.debug&&feedback.debug.mcEq!=null)||(feedback.suspectLine&&settings.showOppHands&&(feedback.rating!=="green"||feedback.debug.closeSpot))) && <div className="fb-anim" style={{animationDelay:"160ms"}}><SuspectLine hands={feedback.suspectLine} show={settings.showOppHands&&(feedback.rating!=="green"||(feedback.debug&&feedback.debug.closeSpot))} eq={feedback.debug?feedback.debug.mcEq:null} needed={feedback.debug?feedback.debug.potOdds:null} showPct={settings.showPct}/></div>}
+            {((feedback.debug&&feedback.debug.mcEq!=null)||(feedback.suspectLine&&settings.showOppHands&&(feedback.rating!=="green"||feedback.debug.closeSpot))) && <div className="fb-anim" style={{animationDelay:"160ms"}}><SuspectLine hands={feedback.suspectLine} show={settings.showOppHands&&(feedback.rating!=="green"||(feedback.debug&&feedback.debug.closeSpot))} eq={feedback.debug?feedback.debug.mcEq:null} needed={feedback.debug?feedback.debug.potOdds:null} showPct={settings.showPct} showTip={showTip}/></div>}
           </>}
         </div>
       </div>
