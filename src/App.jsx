@@ -13,7 +13,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { T, SC, P6, P3, SN, GLOSSARY, OPP } from "./poker-data.js";
 import {
   shuffle, mkDeck, cstr, hn, sortH,
-  classify, genScenario, evalPre, evalPost,
+  classify, genScenario, evalPre, evalPost, probeDifficulty,
   debugRun, debugToCSV, debugSummary,
   loadLocal, saveLocal, loadSettings, saveSettings,
   encodeSeed, decodeSeed,
@@ -234,6 +234,7 @@ export default function PokerTrainer(){
   var [seedInput,setSeedInput]=useState("");
   var fileRef=useRef(null);
   var boardDoneRef=useRef(0);
+  var recentDifficulty=useRef([]);
   var positions=tableSize===6?P6:P3;
   var F={fontFamily:T.font,fontWeight:T.weight};
 
@@ -322,11 +323,31 @@ export default function PokerTrainer(){
     }
   },[mistakeIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  function curatedScenario(pos){
+    var recent=recentDifficulty.current;
+    for(var i=0;i<10;i++){
+      var sc=genScenario(pos);
+      var diff=probeDifficulty(sc);
+      var lastN=recent.slice(-3);
+      var hardCount=lastN.filter(function(d){return d==="hard";}).length;
+      var easyCount=lastN.filter(function(d){return d==="easy";}).length;
+      if(hardCount>=2&&diff==="hard")continue;
+      if(easyCount>=3&&diff==="easy")continue;
+      recent.push(diff);
+      if(recent.length>5)recent.shift();
+      return sc;
+    }
+    var fb=genScenario(pos);
+    recent.push(probeDifficulty(fb));
+    if(recent.length>5)recent.shift();
+    return fb;
+  }
+
   var start=useCallback(function(keepSession,seed){
     if(!keepSession&&log.length>0)persist(log);
     if(!keepSession){setLog([]);setStack(100);setHN(1);}
     else{setHN(function(h){return h+1;});}
-    var sc=seed!=null?genScenario(positions,seed):genScenario(positions);
+    var sc=seed!=null?genScenario(positions,seed):curatedScenario(positions);
     setSc(sc);setSeedInput(encodeSeed(sc.seed));setPhase("action");setFB(null);setScreen("game");setOppThinking(true);setAnimKey(function(k){return k+1;});setBtnFlash(null);
   },[positions,log,persist]);
 
@@ -354,7 +375,7 @@ export default function PokerTrainer(){
       setSc(sc);setSeedInput(encodeSeed(sc.seed));
     }else{
       if(replayMode){setReplayMode(false);setReplayTotal(0);}
-      var sc2=genScenario(positions);
+      var sc2=curatedScenario(positions);
       setSc(sc2);setSeedInput(encodeSeed(sc2.seed));
     }
     setPhase("action");setFB(null);setOppThinking(true);setAnimKey(function(k){return k+1;});setBtnFlash(null);setTipState(null);
@@ -389,7 +410,7 @@ export default function PokerTrainer(){
     var n=hn(scenario.playerHand[0],scenario.playerHand[1]);
     var ev;
     if(scenario.street==="preflop")ev=evalPre(action,n,scenario.pos,scenario.preflopSit,settings.showPct);
-    else ev=evalPost(action,scenario.playerHand,scenario.board,scenario.potSize,scenario.betSize,scenario.opp,scenario.street,scenario.postflopSit,settings.showPct);
+    else ev=evalPost(action,scenario.playerHand,scenario.board,scenario.potSize,scenario.betSize,scenario.opp,scenario.street,scenario.postflopSit,settings.showPct,scenario.heroIsPFR,scenario.heroHasInitiative);
     setFB(ev);setPhase("feedback");setStack(function(s){return s+ev.evDiff;});
     setBtnFlash({action:action,rating:ev.rating});
     setEvPulse(ev.evDiff>=0?"green":"red");
@@ -399,10 +420,12 @@ export default function PokerTrainer(){
           ?scenario.opp.emoji+" "+scenario.opp.name+" player raises from "+scenario.oppPos+". You're at "+scenario.pos+"."
           :"You're at "+scenario.pos+".")
       :"It's the "+SN[scenario.street].toLowerCase()+". "+(scenario.betSize>0
-          ?scenario.opp.emoji+" "+scenario.opp.name+" player bets "+scenario.betSize.toFixed(1)+"BB into a "+(scenario.potSize-scenario.betSize).toFixed(1)+"BB pot."
-          :scenario.opp.emoji+" "+scenario.opp.name+" player checks.");
+          ?(scenario.heroHasInitiative?"You had the betting lead. ":"Opponent controls the action. ")+scenario.opp.emoji+" "+scenario.opp.name+" player bets "+scenario.betSize.toFixed(1)+"BB into a "+(scenario.potSize-scenario.betSize).toFixed(1)+"BB pot."
+          :(scenario.heroHasInitiative?"You have the betting lead. ":"Opponent has the betting lead. ")+scenario.opp.emoji+" "+scenario.opp.name+" player checks.");
     var logEntry={hand:handNum,pos:scenario.pos,cards:n,cardsExact:cstr(scenario.playerHand[0])+" "+cstr(scenario.playerHand[1]),board:scenario.board.length>0?scenario.board.map(cstr).join(" "):"--",pot:scenario.potSize.toFixed(1),bet:scenario.betSize>0?scenario.betSize.toFixed(1):"--",street:SN[scenario.street],situation:scenario.street==="preflop"?scenario.preflopSit:(scenario.betSize>0?"vs bet":"checked to"),opp:scenario.opp.name,oppEmoji:scenario.opp.emoji,oppColor:scenario.opp.color,action:action,correct:ev.best,rating:ev.rating,ev:ev.evDiff,narrative:logNarr,explanation:ev.explanation,
       seed:scenario.seed||null,
+      heroIsPFR:scenario.heroIsPFR||false,
+      heroHasInitiative:scenario.heroHasInitiative||false,
       equity:ev.debug?ev.debug.mcEq:null,
       potOdds:ev.debug?ev.debug.potOdds:null,
       gap:ev.debug?ev.debug.gap:null,
@@ -441,7 +464,7 @@ export default function PokerTrainer(){
       if(scenario.pos==="BB")return["Check","Raise"];
       return["Fold","Raise"];
     }
-    return scenario.betSize>0?["Fold","Call","Raise"]:["Check","Bet"];
+    return scenario.betSize>0?["Fold","Call","Raise"]:["Check","Bet Small","Bet Large"];
   };
 
   var getStats=useCallback(function(){

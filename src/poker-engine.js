@@ -151,31 +151,39 @@ export function analyzeBoard(board){
   if(highBoard)wetFactors+=1;
   if(paired)wetFactors-=1;
 
-  var texture,desc;
-  if(wetFactors>=3){
-    texture="wet";
-    var reasons=[];
-    if(monotone)reasons.push("monotone suits");
+  var texture,desc,reasons=[];
+  if(wetFactors>=5){
+    texture="very_wet";
+    if(monotone)reasons.push("monotone");
     else if(flushDraw)reasons.push("flush possible");
     if(straightComplete)reasons.push("straight on board");
-    else if(connected)reasons.push("connected cards");
+    else if(connected)reasons.push("connected");
+    desc="Very wet board ("+reasons.join(", ")+") — flush and straight draws everywhere.";
+  }else if(wetFactors>=3){
+    texture="wet";
+    if(flushDraw)reasons.push("flush possible");
+    if(connected)reasons.push("connected");
     else if(straightPossible)reasons.push("straight possible");
     if(highBoard)reasons.push("high cards");
-    desc="Wet board ("+reasons.join(", ")+") — many draws possible, strong hands vulnerable to being outdrawn.";
-  }else if(wetFactors<=0){
-    texture="dry";
-    var reasons2=[];
-    if(paired)reasons2.push("paired");
-    if(!connected&&!straightPossible)reasons2.push("disconnected");
-    if(!flushDraw)reasons2.push("rainbow");
-    desc="Dry board ("+reasons2.join(", ")+") — few draws available, made hands are more stable.";
-  }else{
+    desc="Wet board ("+reasons.join(", ")+") — draws present, strong hands need protection.";
+  }else if(wetFactors>=1){
     texture="medium";
-    var reasons3=[];
-    if(flushDraw)reasons3.push("flush possible");
-    if(straightPossible)reasons3.push("straight possible");
-    if(connected)reasons3.push("connected");
-    desc="Mixed board"+(reasons3.length?" ("+reasons3.join(", ")+")":"")+" — some draws possible but not highly coordinated.";
+    if(flushDraw)reasons.push("flush possible");
+    if(straightPossible)reasons.push("straight possible");
+    if(connected)reasons.push("connected");
+    if(highBoard&&!flushDraw&&!straightPossible&&!connected)reasons.push("broadway cards");
+    desc="Mixed board"+(reasons.length?" ("+reasons.join(", ")+")":"")+" — some coordination, not dominant.";
+  }else if(paired){
+    texture="very_dry";
+    reasons.push("paired");
+    if(!connected&&!straightPossible)reasons.push("disconnected");
+    if(!flushDraw)reasons.push("rainbow");
+    desc="Very dry board ("+reasons.join(", ")+") — fortress, hands rarely change.";
+  }else{
+    texture="dry";
+    if(!connected&&!straightPossible)reasons.push("disconnected");
+    if(!flushDraw)reasons.push("rainbow");
+    desc="Dry board ("+reasons.join(", ")+") — few draws, made hands are stable.";
   }
   return{texture:texture,desc:desc,flushDraw:flushDraw,flushComplete:flushComplete,monotone:monotone,connected:connected,straightPossible:straightPossible,straightComplete:straightComplete,paired:paired,highBoard:highBoard};
 }
@@ -431,6 +439,8 @@ export function genScenario(positions,seed){
   var playerIsOOP=false;
   var postflopSit="ip_vs_check";
 
+  var heroIsPFR=false,heroHasInitiative=false;
+
   if(street!=="preflop"){
     playerIsOOP=isOOP(pos,oppPos);
     if(playerIsOOP){
@@ -446,6 +456,20 @@ export function genScenario(positions,seed){
         postflopSit="ip_vs_check";
       }
     }
+
+    // PFR probability — IP players more likely to be the raiser
+    var pfrProb=playerIsOOP?0.35:0.70;
+    if(pos==="BTN")pfrProb+=0.10;
+    else if(pos==="CO")pfrProb+=0.05;
+    else if(pos==="UTG"||pos==="MP")pfrProb-=0.10;
+    pfrProb=Math.max(0.15,Math.min(0.90,pfrProb));
+    heroIsPFR=rng()<pfrProb;
+
+    // Initiative decays across streets
+    var initProb=heroIsPFR?0.70:0.25;
+    if(street==="turn")initProb*=0.80;
+    if(street==="river")initProb*=0.65;
+    heroHasInitiative=rng()<initProb;
   }
 
   var pH,oH,board,att=0;
@@ -482,7 +506,7 @@ export function genScenario(positions,seed){
 
     if(pfSit==="vs_raise"){potSize=3.5;betSize=2.5;}
     else{potSize=1.5;betSize=0;}
-    return{seed:seed,street:street,pos:pos,opp:opp,oppPos:oppPos,playerHand:pH,oppHand:oH,board:board,potSize:potSize,betSize:betSize,preflopSit:pfSit,postflopSit:null,playerIsOOP:false};
+    return{seed:seed,street:street,pos:pos,opp:opp,oppPos:oppPos,playerHand:pH,oppHand:oH,board:board,potSize:potSize,betSize:betSize,preflopSit:pfSit,postflopSit:null,playerIsOOP:false,heroIsPFR:false,heroHasInitiative:false};
   }
 
   potSize=4+(0|rng()*12);
@@ -494,7 +518,7 @@ export function genScenario(positions,seed){
     betSize=0;
   }
 
-  return{seed:seed,street:street,pos:pos,opp:opp,oppPos:oppPos,playerHand:pH,oppHand:oH,board:board,potSize:potSize,betSize:betSize,preflopSit:null,postflopSit:postflopSit,playerIsOOP:playerIsOOP};
+  return{seed:seed,street:street,pos:pos,opp:opp,oppPos:oppPos,playerHand:pH,oppHand:oH,board:board,potSize:potSize,betSize:betSize,preflopSit:null,postflopSit:postflopSit,playerIsOOP:playerIsOOP,heroIsPFR:heroIsPFR,heroHasInitiative:heroHasInitiative};
 }
 
 export function oppMod(oppId){
@@ -507,12 +531,12 @@ export function oppMod(oppId){
 // POST-FLOP EVALUATOR
 // ═══════════════════════════════════════════════════════════════
 
-export function evalPost(action,hole,board,pot,bet,opp,street,postflopSit,showPct){
+export function evalPost(action,hole,board,pot,bet,opp,street,postflopSit,showPct,heroIsPFR,heroHasInitiative){
   var info=classify(hole,board);
   var isR=street==="river";
   var best,acc,mcEq,closeSpot=false;
 
-  var dbg={mcEq:0,potOdds:null,gap:null,closeSpot:false,betRangeSize:null,checkRangeSize:null,callRangeSize:null,eqVsCheck:null,eqVsCall:null,rangeFallback:false,rangeFallbackLevel:0};
+  var dbg={mcEq:0,potOdds:null,gap:null,closeSpot:false,betRangeSize:null,checkRangeSize:null,callRangeSize:null,eqVsCheck:null,eqVsCall:null,rangeFallback:false,rangeFallbackLevel:0,foldEq:null,beFE_small:null,beFE_large:null,oppBetPct:null};
 
   if(bet>0){
     var betResult=getRangeWithFallback(opp.id,"bet",board,hole);
@@ -522,6 +546,7 @@ export function evalPost(action,hole,board,pot,bet,opp,street,postflopSit,showPc
     var gap=mcEq-needed;
     dbg.betRangeSize=betRange.length;dbg.potOdds=needed;dbg.gap=gap;
     dbg.rangeFallback=betResult.fallback;dbg.rangeFallbackLevel=betResult.fallbackLevel;
+    dbg.oppBetPct=bet/Math.max(pot-bet,1);
 
     var raiseWorthy=info.category==="good"||info.category==="strong"||info.category==="monster";
     if(mcEq>=0.62&&gap>0.08&&raiseWorthy){
@@ -553,51 +578,108 @@ export function evalPost(action,hole,board,pot,bet,opp,street,postflopSit,showPc
     var fb=checkResult.fallback||callResult.fallback;
     dbg.rangeFallback=fb;dbg.rangeFallbackLevel=Math.max(checkResult.fallbackLevel,callResult.fallbackLevel);
 
+    // Fold equity calculations
+    var foldEq=1-(callRange.length/Math.max(checkRange.length,1));
+    foldEq=Math.max(0,Math.min(1,foldEq));
+    var smallBetPct=0.33,largeBetPct=0.75;
+    var beFE_small=smallBetPct/(1+smallBetPct);
+    var beFE_large=largeBetPct/(1+largeBetPct);
+    dbg.foldEq=foldEq;dbg.beFE_small=beFE_small;dbg.beFE_large=beFE_large;
+
+    // Sizing decision from board texture
+    var tex=info.boardTexture;
+    var sizeUp=tex&&(tex.texture==="wet"||tex.texture==="very_wet");
+    var isBluff=info.category==="trash"||info.category==="weak";
+    var hasDraw=info.drawOuts>=6;
+
+    // 1. Strong value
     if(eqVsCall>0.55){
-      best="Bet";acc=["Bet"];
-    }else if(eqVsCall>0.50){
-      best="Bet";acc=["Bet","Check"];
-    }else if(!isR&&info.drawOuts>=6&&eqVsCall>0.30){
-      best="Bet";acc=["Bet","Check"];
-    }else if(eqVsCall>0.46){
+      if(sizeUp){best="Bet Large";acc=["Bet Large","Bet Small"];}
+      else{best="Bet Small";acc=["Bet Small","Bet Large"];}
+    }
+    // 2. Thin value
+    else if(eqVsCall>0.50){
+      best="Bet Small";acc=["Bet Small","Check"];
+    }
+    // 3. Semi-bluff (draws, not river)
+    else if(!isR&&hasDraw&&eqVsCall>0.30){
+      if(sizeUp&&foldEq>beFE_large){
+        best="Bet Large";acc=["Bet Large","Bet Small"];
+      }else if(foldEq>beFE_small){
+        best="Bet Small";acc=["Bet Small","Check"];
+      }else{
+        best="Check";acc=["Check","Bet Small"];
+      }
+    }
+    // 4. C-bet / barrel bluff (initiative + weak hand, not river)
+    else if(heroHasInitiative&&isBluff&&!isR){
+      if(!sizeUp&&foldEq>beFE_small){
+        best="Bet Small";acc=["Bet Small","Check"];
+      }else if(foldEq>beFE_large){
+        best="Bet Large";acc=["Bet Large","Check"];
+      }else{
+        best="Check";acc=["Check"];
+      }
+    }
+    // 5. No initiative, weak hand — no leverage to bluff
+    else if(!heroHasInitiative&&isBluff){
+      best="Check";acc=["Check"];
+    }
+    // 6. Marginal
+    else if(eqVsCall>0.46){
       closeSpot=true;
-      best="Check";acc=["Check","Bet"];
-    }else{
+      best="Check";acc=["Check","Bet Small"];
+    }
+    // 7. Default
+    else{
       best="Check";acc=["Check"];
     }
   }
 
+  // Rating: green = exact match or close-spot acceptable; yellow = acceptable or right-to-bet wrong size; red = wrong
+  var userIsBet=action==="Bet Small"||action==="Bet Large";
+  var bestIsBet=best==="Bet Small"||best==="Bet Large";
   var rating;
   if(action===best){
     rating="green";
   }else if(closeSpot&&acc.indexOf(action)!==-1){
     rating="green";
+  }else if(userIsBet&&bestIsBet){
+    rating="yellow";
   }else if(acc.indexOf(action)!==-1){
     rating="yellow";
   }else{
     rating="red";
   }
 
+  var BET_LIKE=["Raise","Bet","Bet Small","Bet Large"];
   var evDiff=0;
   if(rating==="green"){
     if(best==="Fold"||action==="Fold")evDiff=+Math.max(0.3,Math.round(pot*0.02*10)/10);
     else if(best==="Call"||action==="Call")evDiff=+Math.max(0.5,Math.round(pot*0.05*10)/10);
-    else if(best==="Raise"||best==="Bet"||action==="Raise"||action==="Bet")evDiff=+Math.max(0.8,Math.round(pot*0.08*10)/10);
+    else if(BET_LIKE.indexOf(best)!==-1||BET_LIKE.indexOf(action)!==-1)evDiff=+Math.max(0.8,Math.round(pot*0.08*10)/10);
     else if(best==="Check"||action==="Check")evDiff=+Math.max(0.3,Math.round(pot*0.02*10)/10);
   }else if(rating==="red"){
     if(best==="Fold"&&action!=="Fold")evDiff=-(bet||Math.round(pot*0.5));
     else if(action==="Fold"&&best!=="Fold")evDiff=-Math.round(pot*0.15);
     else evDiff=-Math.round(pot*0.1);
   }else{
-    // Yellow: small penalty, capped at -0.3 BB so "acceptable" feels like a nudge
-    evDiff=-Math.min(0.3, Math.round(pot*0.02*10)/10);
+    // Yellow: sizing-specific penalty is lighter than generic yellow
+    if(userIsBet&&bestIsBet){
+      evDiff=-Math.min(0.2,Math.round(pot*0.01*10)/10);
+    }else{
+      evDiff=-Math.min(0.3,Math.round(pot*0.02*10)/10);
+    }
   }
 
   dbg.mcEq=mcEq;dbg.closeSpot=closeSpot;
   var explanation=buildNarrative({
     userAction:action,bestAction:best,rating:rating,info:info,mcEq:mcEq,
     opp:opp,street:street,pot:pot,bet:bet,closeSpot:closeSpot,showPct:showPct,
-    betRangeSize:dbg.betRangeSize,checkRangeSize:dbg.checkRangeSize,callRangeSize:dbg.callRangeSize
+    betRangeSize:dbg.betRangeSize,checkRangeSize:dbg.checkRangeSize,callRangeSize:dbg.callRangeSize,
+    heroIsPFR:heroIsPFR||false,heroHasInitiative:heroHasInitiative||false,
+    foldEq:dbg.foldEq||0,beFE_small:dbg.beFE_small||0,beFE_large:dbg.beFE_large||0,
+    oppBetPct:dbg.oppBetPct||0,postflopSit:postflopSit
   });
   // Suspect line: only compute for mistakes and close spots
   var suspectLine=null;
@@ -633,7 +715,7 @@ function preflopStrengthNote(nota,pos){
     return nota+(isSuited?" (suited)":"")+" is a strong broadway combo with good high-card equity.";
   }
   if(hiV>=10&&loV>=9&&Math.abs(hiV-loV)<=2){
-    return nota+(isSuited?" (suited)":"")+" is a connected hand. Its value comes from making straights and"+(isSuited?" flushes":"")+" rather than high-card strength.";
+    return nota+(isSuited?" (suited)":"")+" is a connected hand. Its value comes from making straights"+(isSuited?" and flushes":"")+" rather than high-card strength.";
   }
   if(isSuited&&Math.abs(hiV-loV)<=2)return nota+" is a suited connector. Playable in position for its straight and flush potential, but low raw equity.";
   if(hiV>=12)return nota+" has one strong card but a weak kicker. Often dominated by better hands in the same range.";
@@ -729,8 +811,11 @@ function perActionRating(act,firstEval,isPreflop,pot,bet){
   var best=firstEval.best;
   var acc=firstEval.acceptable;
   var cs=firstEval.debug?firstEval.debug.closeSpot:false;
+  var userIsBet=act==="Bet Small"||act==="Bet Large";
+  var bestIsBet=best==="Bet Small"||best==="Bet Large";
   var rating=act===best?"green"
     :(cs&&acc.indexOf(act)!==-1)?"green"
+    :(userIsBet&&bestIsBet)?"yellow"
     :acc.indexOf(act)!==-1?"yellow":"red";
   var evDiff=0;
   if(isPreflop){
@@ -743,16 +828,45 @@ function perActionRating(act,firstEval,isPreflop,pot,bet){
     if(rating==="green"){
       if(best==="Fold"||act==="Fold")evDiff=+Math.max(0.3,Math.round(pot*0.02*10)/10);
       else if(best==="Call"||act==="Call")evDiff=+Math.max(0.5,Math.round(pot*0.05*10)/10);
-      else if(["Raise","Bet"].indexOf(best)!==-1||["Raise","Bet"].indexOf(act)!==-1)
+      else if(["Raise","Bet","Bet Small","Bet Large"].indexOf(best)!==-1||["Raise","Bet","Bet Small","Bet Large"].indexOf(act)!==-1)
         evDiff=+Math.max(0.8,Math.round(pot*0.08*10)/10);
       else evDiff=+Math.max(0.3,Math.round(pot*0.02*10)/10);
     }else if(rating==="red"){
       if(best==="Fold"&&act!=="Fold")evDiff=-(bet||Math.round(pot*0.5));
       else if(act==="Fold"&&best!=="Fold")evDiff=-Math.round(pot*0.15);
       else evDiff=-Math.round(pot*0.1);
-    }else{evDiff=-Math.min(0.3,Math.round(pot*0.02*10)/10);}
+    }else{
+      if(userIsBet&&bestIsBet)evDiff=-Math.min(0.2,Math.round(pot*0.01*10)/10);
+      else evDiff=-Math.min(0.3,Math.round(pot*0.02*10)/10);
+    }
   }
   return{rating:rating,evDiff:evDiff,best:best,acceptable:acc};
+}
+
+export function probeDifficulty(scenario){
+  if(scenario.street==="preflop"){
+    var nota=hn(scenario.playerHand[0],scenario.playerHand[1]);
+    var ev=evalPre("Fold",nota,scenario.pos,scenario.preflopSit,false);
+    return ev.acceptable.length===1?"easy":"medium";
+  }
+  var ev2=evalPost("Check",scenario.playerHand,scenario.board,
+    scenario.potSize,scenario.betSize,scenario.opp,scenario.street,
+    scenario.postflopSit,false,scenario.heroIsPFR,scenario.heroHasInitiative);
+  var dbg=ev2.debug||{};
+  if(dbg.closeSpot)return"hard";
+  if(scenario.betSize>0){
+    var gap=Math.abs(dbg.gap||0);
+    if(gap>0.15)return"easy";
+    if(gap>0.06)return"medium";
+    return"hard";
+  }
+  var eq=dbg.eqVsCall;
+  if(eq!=null){
+    if(eq>0.60||eq<0.35)return"easy";
+    if(eq>0.52||eq<0.42)return"medium";
+    return"hard";
+  }
+  return"medium";
 }
 
 export function debugRun(n,tableSize){
@@ -771,7 +885,7 @@ export function debugRun(n,tableSize){
       else if(sc.pos==="BB")acts=["Check","Raise"];
       else acts=["Fold","Raise"];
     }else{
-      acts=sc.betSize>0?["Fold","Call","Raise"]:["Check","Bet"];
+      acts=sc.betSize>0?["Fold","Call","Raise"]:["Check","Bet Small","Bet Large"];
     }
 
     // Evaluate once with acts[0] to determine best/acceptable/closeSpot via MC.
@@ -782,7 +896,7 @@ export function debugRun(n,tableSize){
     if(isPre){
       firstEval=evalPre(acts[0],nota,sc.pos,sc.preflopSit,true);
     }else{
-      firstEval=evalPost(acts[0],sc.playerHand,sc.board,sc.potSize,sc.betSize,sc.opp,sc.street,sc.postflopSit,true);
+      firstEval=evalPost(acts[0],sc.playerHand,sc.board,sc.potSize,sc.betSize,sc.opp,sc.street,sc.postflopSit,true,sc.heroIsPFR,sc.heroHasInitiative);
     }
     var evals={};
     evals[acts[0]]=firstEval;
@@ -826,6 +940,9 @@ export function debugRun(n,tableSize){
       betRangeSize:dbg.betRangeSize!=null?dbg.betRangeSize:"--",
       checkRangeSize:dbg.checkRangeSize!=null?dbg.checkRangeSize:"--",
       callRangeSize:dbg.callRangeSize!=null?dbg.callRangeSize:"--",
+      foldEq:dbg.foldEq!=null?dbg.foldEq.toFixed(3):"--",
+      heroIsPFR:sc.heroIsPFR?"PFR":"Caller",
+      heroHasInitiative:sc.heroHasInitiative?"Init":"NoInit",
       evBest:(evals[bestAction]?evals[bestAction].evDiff:0).toFixed(1),
       explanation:bestEv.explanation?bestEv.explanation.substring(0,120):"--",
       fullExplanation:bestEv.explanation||"--",
@@ -862,6 +979,7 @@ export function debugToCSV(results){
 export function debugSummary(results){
   var total=results.length;
   var byStreet={};var byOpp={};var byPos={};var byCat={};var actionDist={};
+  var initDist={PFR:0,Caller:0,Init:0,NoInit:0};
   var flags=[];
 
   for(var i=0;i<total;i++){
@@ -879,12 +997,14 @@ export function debugSummary(results){
       byCat[r.handCategory].actions[r.bestAction]=(byCat[r.handCategory].actions[r.bestAction]||0)+1;
     }
     actionDist[r.bestAction]=(actionDist[r.bestAction]||0)+1;
+    if(r.heroIsPFR)initDist[r.heroIsPFR]=(initDist[r.heroIsPFR]||0)+1;
+    if(r.heroHasInitiative)initDist[r.heroHasInitiative]=(initDist[r.heroHasInitiative]||0)+1;
 
     if(r.handCategory==="monster"&&r.bestAction==="Fold"){
       flags.push("#"+r.hand+": MONSTER hand ("+r.cards+" / "+r.handDesc+") told to Fold on "+r.board);
     }
-    if(r.handCategory==="trash"&&r.bestAction==="Raise"&&r.street!=="preflop"){
-      flags.push("#"+r.hand+": TRASH hand ("+r.cards+" / "+r.handDesc+") told to Raise on "+r.board);
+    if(r.handCategory==="trash"&&(r.bestAction==="Raise"||r.bestAction==="Bet Large")&&r.street!=="preflop"&&r.heroHasInitiative!=="Init"){
+      flags.push("#"+r.hand+": TRASH hand ("+r.cards+" / "+r.handDesc+") told to "+r.bestAction+" without initiative on "+r.board);
     }
     if(r.handCategory==="strong"&&r.bestAction==="Fold"){
       flags.push("#"+r.hand+": STRONG hand ("+r.cards+" / "+r.handDesc+") told to Fold on "+r.board+", opp="+r.oppType+", sit="+r.situation);
@@ -925,6 +1045,9 @@ export function debugSummary(results){
   Object.keys(byCat).forEach(function(c){
     var d=byCat[c];lines.push("  "+c+" ("+d.n+"): "+Object.entries(d.actions).map(function(e){return e[0]+"="+e[1];}).join(", "));
   });
+  lines.push("");
+  lines.push("INITIATIVE DISTRIBUTION:");
+  lines.push("  PFR: "+initDist.PFR+"  Caller: "+initDist.Caller+"  Initiative: "+initDist.Init+"  NoInit: "+initDist.NoInit);
   lines.push("");
   if(flags.length===0){
     lines.push("FLAGS: None — no suspicious patterns detected.");

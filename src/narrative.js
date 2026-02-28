@@ -11,6 +11,8 @@ var CORRECT_FOLD = ["Good fold.", "Right fold.", "Disciplined.", "Smart fold.", 
 var CORRECT_CHECK = ["Good check.", "Right check.", "Correct.", "Solid.", "Smart."];
 var CORRECT_BET = ["Good bet.", "Right bet.", "Correct.", "Solid.", "Well played."];
 var CORRECT_RAISE = ["Good raise.", "Solid.", "Correct.", "Right raise.", "Well played."];
+var CORRECT_BET_SMALL = ["Good small bet.", "Right sizing.", "Correct.", "Sharp.", "Well sized."];
+var CORRECT_BET_LARGE = ["Good big bet.", "Right sizing.", "Correct.", "Solid.", "Well played."];
 var CLOSE_CORRECT_OPENERS = ["Edge case.", "Razor-thin.", "Close call.", "Marginal spot."];
 
 function pick(arr) {
@@ -21,6 +23,8 @@ function openerForCorrect(best) {
   if (best === "Fold") return pick(CORRECT_FOLD);
   if (best === "Check") return pick(CORRECT_CHECK);
   if (best === "Bet") return pick(CORRECT_BET);
+  if (best === "Bet Small") return pick(CORRECT_BET_SMALL);
+  if (best === "Bet Large") return pick(CORRECT_BET_LARGE);
   if (best === "Raise") return pick(CORRECT_RAISE);
   return pick(CORRECT_OPENERS);
 }
@@ -43,13 +47,6 @@ function eqWord(mcEq, needed) {
   return "behind";
 }
 
-function sizingWord(bet, pot) {
-  if (bet <= 0) return "";
-  var ratio = bet / (pot - bet); // bet as fraction of original pot
-  if (ratio >= 0.7) return "Big bet.";
-  if (ratio >= 0.4) return "";  // standard, don't mention
-  return "Small bet — good price.";
-}
 
 function texPhrase(tex, street) {
   if (!tex || tex.texture === "none") return "";
@@ -57,8 +54,12 @@ function texPhrase(tex, street) {
   if (isR) {
     if (tex.flushComplete) return " — flush completed on board";
     if (tex.straightComplete) return " — straight possible on board";
-    if (tex.texture === "dry") return " on a dry runout";
+    if (tex.texture === "dry" || tex.texture === "very_dry") return " on a dry runout";
     return "";
+  }
+  if (tex.texture === "very_wet") {
+    if (tex.straightPossible && tex.flushDraw) return " on a very wet board (flush and straight draws)";
+    return " on a very wet board";
   }
   if (tex.texture === "wet") {
     if (tex.straightPossible && tex.flushDraw) return " on a wet board (flush and straight draws)";
@@ -66,8 +67,13 @@ function texPhrase(tex, street) {
     if (tex.flushDraw) return " on a wet board";
     return " on a wet board";
   }
+  if (tex.texture === "medium") {
+    if (tex.straightPossible) return " on a semi-connected board";
+    if (tex.flushDraw) return " on a slightly wet board";
+    return " on a mixed board";
+  }
+  if (tex.texture === "very_dry") return " on a very dry board";
   if (tex.texture === "dry") return " on a dry board";
-  if (tex.straightPossible) return " on a connected board";
   return "";
 }
 
@@ -94,7 +100,7 @@ function reconcile(category, mcEq, facingBet) {
 
 // ── Opponent context fragments ──────────────────────────────
 
-function oppNote(opp, facingBet, best) {
+function oppNote(opp, facingBet, best, postflopSit) {
   var id = opp.id;
   if (facingBet) {
     if (id === "tight") {
@@ -114,18 +120,20 @@ function oppNote(opp, facingBet, best) {
     if (best === "Raise") return "Strong enough to raise for value.";
     return "";
   } else {
+    var bestIsBet = best === "Bet" || best === "Bet Small" || best === "Bet Large";
+    if (postflopSit === "oop_first_to_act") return "";
     if (id === "tight") {
-      if (best === "Bet") return "Careful player checking signals weakness — take the pot.";
+      if (bestIsBet) return "Careful player checking signals weakness — take the pot.";
       if (best === "Check") return "Careful player checked, but your hand can't profit from betting.";
       return "";
     }
     if (id === "aggro") {
-      if (best === "Bet") return "Aggro player checking means genuine weakness.";
+      if (bestIsBet) return "Aggro player checking means genuine weakness.";
       if (best === "Check") return "Aggro player checked, but your hand isn't strong enough to exploit.";
       return "";
     }
-    if (best === "Bet") return "Their check signals weakness.";
-    if (best === "Check") return ""; // core already says "betting only gets called by better" — avoid duplication
+    if (bestIsBet) return "Their check signals weakness.";
+    if (best === "Check") return "";
     return "";
   }
 }
@@ -152,6 +160,71 @@ function strongHandBridge(info, opp, mcEq, facingBet) {
   return hd + " — strong hand, but betting only gets called by better on this board.";
 }
 
+// ── Initiative / fold equity / sizing helpers ───────────────
+
+function initiativePhrase(ctx) {
+  if (ctx.bet > 0) return "";
+  if (ctx.heroHasInitiative) {
+    if (ctx.bestAction === "Check" && (ctx.info.category === "trash" || ctx.info.category === "weak"))
+      return " You had the lead, but giving up is right here.";
+    if (ctx.bestAction === "Bet Small" || ctx.bestAction === "Bet Large")
+      return " You raised preflop — keep the pressure.";
+  }
+  if (!ctx.heroHasInitiative && !ctx.heroIsPFR) {
+    if (ctx.bestAction === "Check" && (ctx.info.category === "trash" || ctx.info.category === "weak"))
+      return " Without the betting lead, a bluff carries less weight.";
+  }
+  return "";
+}
+
+function foldEqPhrase(ctx) {
+  var bestIsBet = ctx.bestAction === "Bet Small" || ctx.bestAction === "Bet Large";
+  if (!bestIsBet) return "";
+  var beFE = ctx.bestAction === "Bet Large" ? ctx.beFE_large : ctx.beFE_small;
+  if (ctx.foldEq > beFE + 0.10) return " Their range folds enough to profit.";
+  if (ctx.foldEq > beFE) return " Fold equity just clears the bar.";
+  return "";
+}
+
+function sizingPhrase(best, tex) {
+  if (!tex) return "";
+  var t = tex.texture;
+  if (best === "Bet Small") {
+    if (t === "very_dry") return " Small bet — fortress board, nothing to charge.";
+    if (t === "dry") return " Small bet works on this dry board.";
+    if (t === "medium") return " Small bet — board has some coordination but nothing dominant.";
+    return " Small bet extracts thin value.";
+  }
+  if (best === "Bet Large") {
+    if (t === "very_wet") return " Big bet — draws everywhere, max protection.";
+    if (t === "wet") return " Big bet charges the draws.";
+    return " Big bet for max value.";
+  }
+  return "";
+}
+
+function oppSizingPhrase(oppBetPct) {
+  if (!oppBetPct) return "";
+  if (oppBetPct >= 0.66) return " Big bet demands more equity.";
+  if (oppBetPct <= 0.40) return " Small bet — good price.";
+  return "";
+}
+
+function sizingMistakePhrase(user, best, tex) {
+  var t = tex ? tex.texture : "";
+  if (best === "Bet Large" && user === "Bet Small") {
+    if (t === "very_wet") return "Right to bet, but this board is loaded with draws — big bet is mandatory.";
+    if (t === "wet") return "Right to bet, but draws on this board need a bigger bet to charge them.";
+    return "Right to bet, but a larger sizing extracts more here.";
+  }
+  if (best === "Bet Small" && user === "Bet Large") {
+    if (t === "very_dry" || t === "dry") return "Right to bet, but this board is stable — small bet gets the same calls for less risk.";
+    if (t === "medium") return "Right to bet, but draws aren't dominant — small bet risks less for the same result.";
+    return "Right to bet, but smaller gets called by the same hands for less risk.";
+  }
+  return "";
+}
+
 // ── Core narrative builders ─────────────────────────────────
 
 function buildPostflop(ctx) {
@@ -165,6 +238,7 @@ function buildPostflop(ctx) {
   var bet = ctx.bet;
   var closeSpot = ctx.closeSpot;
   var showPct = ctx.showPct;
+  var postflopSit = ctx.postflopSit;
   var facingBet = bet > 0;
   var isR = street === "river";
 
@@ -197,8 +271,6 @@ function buildPostflop(ctx) {
     }
   }
 
-  var sizing = sizingWord(bet, pot);
-
   // ── CLOSE SPOT ────────────────────────────────────────────
   if (closeSpot) {
     var closeBase;
@@ -220,27 +292,27 @@ function buildPostflop(ctx) {
     if (best === "Fold") {
       if (drawOuts > 0) {
         var foldCore = origHd === "Nothing" ? hd : origHd + " plus " + dt;
-        return foldCore + tp + " — draws don't close the gap." + eqStr + " " + oppNote(opp, true, best);
+        return foldCore + tp + " — draws don't close the gap." + eqStr + " " + oppNote(opp, true, best, postflopSit);
       }
       if (isR) {
-        return hd + tp + " — not strong enough to beat their value range. Nothing left to draw to. " + oppNote(opp, true, best);
+        return hd + tp + " — not strong enough to beat their value range. Nothing left to draw to. " + oppNote(opp, true, best, postflopSit);
       }
       if (recon === "strong_hand_weak_eq") {
-        return strongHandBridge(info, opp, mcEq, true) + eqStr + " " + oppNote(opp, true, best);
+        return strongHandBridge(info, opp, mcEq, true) + eqStr + " " + oppNote(opp, true, best, postflopSit);
       }
-      return hd + tp + " — not enough against this range." + (sizing ? " " + sizing : "") + eqStr + " " + oppNote(opp, true, best);
+      return hd + tp + " — not enough against this range." + eqStr + " " + oppNote(opp, true, best, postflopSit) + oppSizingPhrase(ctx.oppBetPct);
     }
 
     // CALL
     if (best === "Call") {
       if (recon === "weak_hand_strong_eq") {
-        return weakHandBridge(info, opp, mcEq, true) + (sizing ? " " + sizing : "") + eqStr;
+        return weakHandBridge(info, opp, mcEq, true) + eqStr + oppSizingPhrase(ctx.oppBetPct);
       }
       if (drawOuts >= 6) {
         var callCore = origHd === "Nothing" ? hd : origHd + " plus " + dt;
-        return callCore + tp + " — draws give you a solid edge over the price." + eqStr;
+        return callCore + tp + " — draws give you a solid edge over the price." + eqStr + oppSizingPhrase(ctx.oppBetPct);
       }
-      return hd + tp + " — " + eqWord(mcEq, needed) + "." + (sizing ? " " + sizing : "") + eqStr + " " + oppNote(opp, true, best);
+      return hd + tp + " — " + eqWord(mcEq, needed) + "." + eqStr + " " + oppNote(opp, true, best, postflopSit) + oppSizingPhrase(ctx.oppBetPct);
     }
 
     // RAISE
@@ -248,35 +320,42 @@ function buildPostflop(ctx) {
       if (recon === "weak_hand_strong_eq") {
         return weakHandBridge(info, opp, mcEq, true) + " Raise for value." + eqStr;
       }
-      return hd + tp + " — " + eqWord(mcEq, needed) + ". Raise for value." + eqStr + " " + oppNote(opp, true, best);
+      return hd + tp + " — " + eqWord(mcEq, needed) + ". Raise for value." + eqStr + " " + oppNote(opp, true, best, postflopSit);
     }
   }
 
   // ── NOT FACING BET (check/bet decision) ───────────────────
-  // BET
-  if (best === "Bet") {
+  // BET SMALL / BET LARGE
+  if (best === "Bet Small" || best === "Bet Large") {
+    var initNote = initiativePhrase(ctx);
+    var szNote = sizingPhrase(best, tex);
+    var feNote = foldEqPhrase(ctx);
+
     if (draws.length > 0 && ["good", "strong", "monster"].indexOf(info.category) === -1) {
-      // semi-bluff
-      return hd + tp + (origHd !== "Nothing" ? dp : "") + " — not much yet, but outs if called. Take it down or improve.";
+      return hd + tp + (origHd !== "Nothing" ? dp : "") + " — not much yet, but outs if called." + feNote + szNote;
+    }
+    if ((info.category === "trash" || info.category === "weak") && ctx.heroHasInitiative) {
+      return hd + tp + " — continuation bet." + feNote + szNote + initNote;
     }
     if (recon === "weak_hand_strong_eq") {
-      return weakHandBridge(info, opp, mcEq, false) + " Worse hands will call." + eqStr;
+      return weakHandBridge(info, opp, mcEq, false) + " Worse hands will call." + szNote + eqStr;
     }
-    return hd + tp + " — worse hands will call." + eqStr + " " + oppNote(opp, false, best);
+    return hd + tp + " — worse hands will call." + szNote + eqStr + " " + oppNote(opp, false, best, postflopSit) + initNote;
   }
 
   // CHECK
   if (best === "Check") {
+    var checkInit = initiativePhrase(ctx);
     if (isR) {
-      return hd + tp + " — betting only gets called by better. Take the showdown. " + oppNote(opp, false, best);
+      return hd + tp + " — betting only gets called by better. Take the showdown. " + oppNote(opp, false, best, postflopSit) + checkInit;
     }
     if (recon === "strong_hand_weak_eq") {
-      return strongHandBridge(info, opp, mcEq, false);
+      return strongHandBridge(info, opp, mcEq, false) + checkInit;
     }
-    return hd + tp + " — betting only gets called by better. Take the free card. " + oppNote(opp, false, best);
+    return hd + tp + " — betting only gets called by better. Take the free card. " + oppNote(opp, false, best, postflopSit) + checkInit;
   }
 
-  return hd + ". " + oppNote(opp, facingBet, best);
+  return hd + ". " + oppNote(opp, facingBet, best, postflopSit);
 }
 
 // ── Outcome framing (wraps the core narrative) ──────────────
@@ -331,6 +410,13 @@ export function buildNarrative(ctx) {
     if (ctx.rating === "green")
       return frameCloseAcceptable(ctx, core);
     return frameCloseMistake(ctx, core);
+  }
+
+  // Sizing-specific yellow: right to bet, wrong size
+  var userIsBet = ctx.userAction === "Bet Small" || ctx.userAction === "Bet Large";
+  var bestIsBet = ctx.bestAction === "Bet Small" || ctx.bestAction === "Bet Large";
+  if (userIsBet && bestIsBet && ctx.userAction !== ctx.bestAction) {
+    return sizingMistakePhrase(ctx.userAction, ctx.bestAction, ctx.info.boardTexture) + " " + core;
   }
 
   if (ctx.rating === "green") return frameCorrect(ctx, core);

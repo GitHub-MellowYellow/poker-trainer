@@ -107,7 +107,7 @@ function runHand(handNum, seedCode) {
     else if (sc.pos === 'BB')         acts = ['Check', 'Raise'];
     else                              acts = ['Fold', 'Raise'];
   } else {
-    acts = sc.betSize > 0 ? ['Fold', 'Call', 'Raise'] : ['Check', 'Bet'];
+    acts = sc.betSize > 0 ? ['Fold', 'Call', 'Raise'] : ['Check', 'Bet Small', 'Bet Large'];
   }
 
   // Evaluate each action — each call returns action-specific narrative.
@@ -121,7 +121,8 @@ function runHand(handNum, seedCode) {
       evals[act] = evalPost(
         act, sc.playerHand, sc.board,
         sc.potSize, sc.betSize,
-        sc.opp, sc.street, sc.postflopSit, true
+        sc.opp, sc.street, sc.postflopSit, true,
+        sc.heroIsPFR, sc.heroHasInitiative
       );
     }
   }
@@ -138,11 +139,13 @@ function runHand(handNum, seedCode) {
   var streetLabel = sc.street.charAt(0).toUpperCase() + sc.street.slice(1);
   var oopLabel = sc.playerIsOOP ? '[OOP]' : '[IP]';
   console.log('\n' + LINE);
+  var initLabel = isPre ? '' : (sc.heroIsPFR ? ' [PFR]' : ' [Caller]') + (sc.heroHasInitiative ? ' [Initiative]' : ' [No Init]');
   console.log(
     BOLD + 'Hand #' + handNum + RESET +
     '  Seed: ' + BOLD + actualSeed + RESET +
     '  ' + streetLabel +
     '  ' + sc.pos + ' ' + DIM + oopLabel + RESET +
+    initLabel +
     '  vs  ' + sc.oppPos +
     '  ' + DIM + sc.opp.name + RESET
   );
@@ -191,6 +194,16 @@ function runHand(handNum, seedCode) {
     if (rp.length) {
       var fb = dbg.rangeFallback ? 'L' + dbg.rangeFallbackLevel : 'no';
       console.log('Ranges: ' + rp.join('  ') + '   fallback=' + fb);
+    }
+    if (dbg.foldEq != null) {
+      console.log(
+        'FoldEq: ' + pct(dbg.foldEq) +
+        '   BE_small: ' + pct(dbg.beFE_small) +
+        '   BE_large: ' + pct(dbg.beFE_large)
+      );
+    }
+    if (dbg.oppBetPct != null && dbg.oppBetPct > 0) {
+      console.log('OppBetPct: ' + pct(dbg.oppBetPct));
     }
   }
 
@@ -247,6 +260,9 @@ function runHand(handNum, seedCode) {
       betRangeSize: dbg.betRangeSize != null ? dbg.betRangeSize : '--',
       checkRangeSize: dbg.checkRangeSize != null ? dbg.checkRangeSize : '--',
       callRangeSize: dbg.callRangeSize != null ? dbg.callRangeSize : '--',
+      foldEq: dbg.foldEq != null ? dbg.foldEq.toFixed(3) : '--',
+      heroIsPFR: sc.heroIsPFR ? 'PFR' : 'Caller',
+      heroHasInitiative: sc.heroHasInitiative ? 'Init' : 'NoInit',
       evBest: (evals[bestAction] ? evals[bestAction].evDiff : 0).toFixed(1),
       explanation: ref.explanation ? ref.explanation.substring(0, 120) : '--',
       fullExplanation: ref.explanation || '--',
