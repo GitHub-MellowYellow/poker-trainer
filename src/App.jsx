@@ -74,9 +74,14 @@ function NT(props){
     {re:/(flush draw|straight draw|open-ended|gutshot|OESD)/gi,t:"hl"},
     {re:/(overpair|top pair|two pair|three of a kind|full house|flush|straight|bottom pair|middle pair|underpair|ace high|overcards|pocket pair|high card)/gi,t:"hl"},
     {re:/(semi-bluff|bluff-catcher|profitable|\+EV|value|pot odds)/gi,t:"hl"},
+    {re:/\b(fold equity)\b/gi,t:"hl"},
+    {re:/\b(continuation bet)\b/gi,t:"hl"},
+    {re:/\b(betting lead)\b/gi,t:"hl"},
     {re:/\b(Fold|Call|Raise|3-Bet|Check|Bet)\b/g,t:"hl"},
     {re:/(Wet board|Dry board|Mixed board)/gi,t:"hl"},
     {re:/\b(preflop|flop|turn|river)\b/gi,t:"hl"},
+    {re:/\b(range)\b/gi,t:"hl"},
+    {re:/\b(Aggro|Careful)\b/g,t:"hl"},
   ];
   var parts=[{text:text,t:"plain"}];
   for(var pi=0;pi<pats.length;pi++){

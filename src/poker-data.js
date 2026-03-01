@@ -177,6 +177,8 @@ export var GLOSSARY = {
   "fold equity": "💡 How often your opponent folds when you bet. Use it: if they fold enough, even a bluff with no hand is profitable. Key math — your bet needs to work often enough to cover the risk.",
   "initiative": "💡 The betting lead — you have it if you were the last to raise or bet. Use it: opponents expect aggression from you, so continuation bets and barrels get more folds. Without it, bluffs carry less weight.",
   "c-bet": "💡 Continuation bet — betting the flop after you raised preflop. Use it: on dry boards against one opponent, a small c-bet takes it down often. Skip it on wet boards when you have nothing.",
+  "continuation bet": "💡 Continuation bet — betting the flop after you raised preflop. Use it: on dry boards against one opponent, a small c-bet takes it down often. Skip it on wet boards when you have nothing.",
+  "betting lead": "💡 The betting lead — you have it if you were the last to raise or bet. Opponents expect aggression from you, so continuation bets and barrels get more folds. Without it, bluffs carry less weight.",
   "double barrel": "💡 Betting the turn after c-betting the flop. Use it: when a scare card hits that helps your story, or when the opponent's calling range is weak. Give up if the board got worse for you.",
   "probe bet": "💡 Betting into someone who had the lead but checked. Use it: their check shows weakness — a small bet can take the pot. Only probe with some equity or on boards that favor your range.",
   "bet sizing": "💡 How much you bet relative to the pot. Use small bets (around a third) on dry boards or for thin value. Use big bets (around three quarters) on wet boards to charge draws and protect your hand.",
