@@ -946,17 +946,19 @@ export default function PokerTrainer(){
               ?{filter:"blur(5px)",opacity:0.25,transition:"none",display:"inline"}
               :{filter:"blur(0px)",opacity:1,transition:"filter 0.5s ease-out, opacity 0.5s ease-out",display:"inline"};
 
+            var initLead=scenario.heroHasInitiative?"You have the betting lead. ":"Opponent has the betting lead. ";
+            var initHad=scenario.heroHasInitiative?"You had the betting lead. ":"Opponent had the betting lead. ";
             if(sit==="ip_vs_bet"){
-              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/><span style={sp}>{" bets "}<BV value={scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" into a "}<BV value={scenario.potSize-scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" pot"}</span>{". You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}{preEqLine}</span>;
+              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". "+initHad}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/><span style={sp}>{" bets "}<BV value={scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" into a "}<BV value={scenario.potSize-scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" pot"}</span>{". You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}{preEqLine}</span>;
             }
             if(sit==="ip_vs_check"){
-              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/><span style={sp}>{" checks"}</span>{". You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}{preEqLine}</span>;
+              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". "+initLead}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/><span style={sp}>{" checks"}</span>{". You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}{preEqLine}</span>;
             }
             if(sit==="oop_first_to_act"){
-              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". You act first at "}<PB pos={pN} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/>{" acts after you."}{hI}{preEqLine}</span>;
+              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". "+initLead}{"You act first at "}<PB pos={pN} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/>{" acts after you."}{hI}{preEqLine}</span>;
             }
             if(sit==="oop_check_then_opp_bets"){
-              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". You checked at "}<PB pos={pN} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/><span style={sp}>{" bets "}<BV value={scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" into a "}<BV value={scenario.potSize-scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" pot"}</span>{"."}{hI}{preEqLine}</span>;
+              return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". "+initHad}{"You checked at "}<PB pos={pN} showTip={showTip}/>{". "}{oppSpan}{" at "}<PB pos={oP} showTip={showTip}/><span style={sp}>{" bets "}<BV value={scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" into a "}<BV value={scenario.potSize-scenario.betSize} fs={14} color={T.goldDark} cs={16}/>{" pot"}</span>{"."}{hI}{preEqLine}</span>;
             }
             return <span>{"It's the "}<StreetBadge street={scenario.street} showTip={showTip}/>{". You're at "}<PB pos={pN} showTip={showTip}/>{"."}{hI}</span>;
           })()}</div>

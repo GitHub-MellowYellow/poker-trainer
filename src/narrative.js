@@ -352,6 +352,10 @@ function buildPostflop(ctx) {
     if (recon === "strong_hand_weak_eq") {
       return strongHandBridge(info, opp, mcEq, false) + checkInit;
     }
+    if (draws.length > 0) {
+      var checkDrawHd = origHd !== "Nothing" ? origHd + dp : hd;
+      return checkDrawHd + tp + " — not profitable to bet, but you have outs. Take the free card. " + oppNote(opp, false, best, postflopSit) + checkInit;
+    }
     return hd + tp + " — betting only gets called by better. Take the free card. " + oppNote(opp, false, best, postflopSit) + checkInit;
   }
 
