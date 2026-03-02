@@ -6,7 +6,8 @@
       "Bash(timeout:*)",
       "Bash(npm run build:*)",
       "mcp__Claude_Preview__preview_start",
-      "Bash(npm run sim:*)"
+      "Bash(npm run sim:*)",
+      "Bash(grep -n '\\\\\\\\' \"G:/Documents/GitHub/poker-trainer/src/poker-engine.js\")"
     ]
   }
 }

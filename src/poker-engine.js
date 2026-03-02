@@ -77,6 +77,8 @@ export function detectDraws(hole,board){
   var hs=hole.map(function(c){return c.suit;});
   var sc={};all.forEach(function(c){sc[c.suit]=(sc[c.suit]||0)+1;});
   Object.keys(sc).forEach(function(s){if(sc[s]===4&&hs.indexOf(s)!==-1)dr.push({type:"flush draw",outs:9,desc:"flush draw"});});
+  // Backdoor flush: 3 cards to suit, hero holds ≥1, flop only
+  if(board.length<=3){Object.keys(sc).forEach(function(s){if(sc[s]===3&&hs.indexOf(s)!==-1&&!dr.some(function(d){return d.type==="flush draw";}))dr.push({type:"backdoor flush",outs:1.5,desc:"backdoor flush draw"});});}
   var avSet={};all.forEach(function(c){avSet[RV[c.rank]]=1;});var av=Object.keys(avSet).map(Number);
   if(av.indexOf(14)!==-1)av.push(1);av.sort(function(a,b){return a-b;});
   var best=null;
@@ -200,8 +202,8 @@ export function classify(hole,board){
   var cat="trash",str=0,desc=ev.name;
 
   if(ev.rank>=4){
-    var be=board.length>=5?evalH(board):{rank:-1};
-    if(be.rank>=ev.rank){cat="marginal";str=0.25;desc=ev.name+" (mostly on board)";}
+    var be=board.length>=5?evalH(board):{rank:-1,score:-1};
+    if(be.score>=ev.score){cat="marginal";str=0.25;desc=ev.name+" (mostly on board)";}
     else{cat="monster";str=0.85+ev.rank*0.015;}
   }else if(ev.rank===3){cat="strong";str=0.65;desc="Three of a Kind";}
   else if(ev.rank===2){
@@ -535,6 +537,7 @@ export function evalPost(action,hole,board,pot,bet,opp,street,postflopSit,showPc
   var info=classify(hole,board);
   var isR=street==="river";
   var best,acc,mcEq,closeSpot=false;
+  var mod=oppMod(opp.id);
 
   var dbg={mcEq:0,potOdds:null,gap:null,closeSpot:false,betRangeSize:null,checkRangeSize:null,callRangeSize:null,eqVsCheck:null,eqVsCall:null,rangeFallback:false,rangeFallbackLevel:0,foldEq:null,beFE_small:null,beFE_large:null,oppBetPct:null};
 
@@ -572,7 +575,7 @@ export function evalPost(action,hole,board,pot,bet,opp,street,postflopSit,showPc
 
     var eqVsCheck=mcEquity(hole,board,checkRange,500);
     var eqVsCall=mcEquity(hole,board,callRange,500);
-    mcEq=eqVsCheck;
+    mcEq=eqVsCall;
     dbg.checkRangeSize=checkRange.length;dbg.callRangeSize=callRange.length;
     dbg.eqVsCheck=eqVsCheck;dbg.eqVsCall=eqVsCall;
     var fb=checkResult.fallback||callResult.fallback;
@@ -591,6 +594,7 @@ export function evalPost(action,hole,board,pot,bet,opp,street,postflopSit,showPc
     var sizeUp=tex&&(tex.texture==="wet"||tex.texture==="very_wet");
     var isBluff=info.category==="trash"||info.category==="weak";
     var hasDraw=info.drawOuts>=6;
+    var hasAnyDraw=info.drawOuts>=1;
 
     // 1. Strong value
     if(eqVsCall>0.55){
@@ -611,26 +615,30 @@ export function evalPost(action,hole,board,pot,bet,opp,street,postflopSit,showPc
         best="Check";acc=["Check","Bet Small"];
       }
     }
-    // 4. C-bet / barrel bluff (initiative + weak hand, not river)
-    else if(heroHasInitiative&&isBluff&&!isR){
-      if(!sizeUp&&foldEq>beFE_small){
-        best="Bet Small";acc=["Bet Small","Check"];
-      }else if(foldEq>beFE_large){
-        best="Bet Large";acc=["Bet Large","Check"];
-      }else{
+    // 4. Bluff (weak/trash, not river)
+    // Flop: require backup equity (backdoor draw) for multi-street plan
+    // Turn: fold equity alone justifies — only one card left
+    else if(isBluff&&!isR){
+      var needsDraw=board.length<=3;
+      if(needsDraw&&!hasAnyDraw){
         best="Check";acc=["Check"];
+      }else{
+        var bluffAdj=mod.bluffMore?-0.05:(mod.bluffMore===false?0.08:0);
+        if(!sizeUp&&foldEq>beFE_small+bluffAdj){
+          best="Bet Small";acc=["Bet Small","Check"];
+        }else if(foldEq>beFE_large+bluffAdj){
+          best="Bet Large";acc=["Bet Large","Check"];
+        }else{
+          best="Check";acc=["Check"];
+        }
       }
     }
-    // 5. No initiative, weak hand — no leverage to bluff
-    else if(!heroHasInitiative&&isBluff){
-      best="Check";acc=["Check"];
-    }
-    // 6. Marginal
+    // 5. Marginal
     else if(eqVsCall>0.46){
       closeSpot=true;
       best="Check";acc=["Check","Bet Small"];
     }
-    // 7. Default
+    // 6. Default
     else{
       best="Check";acc=["Check"];
     }

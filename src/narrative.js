@@ -171,8 +171,11 @@ function initiativePhrase(ctx) {
       return " You raised preflop — keep the pressure.";
   }
   if (!ctx.heroHasInitiative && !ctx.heroIsPFR) {
+    if ((ctx.bestAction === "Bet Small" || ctx.bestAction === "Bet Large")
+        && (ctx.info.category === "trash" || ctx.info.category === "weak"))
+      return " Even without the lead, their range is weak enough to attack.";
     if (ctx.bestAction === "Check" && (ctx.info.category === "trash" || ctx.info.category === "weak"))
-      return " Without the betting lead, a bluff carries less weight.";
+      return " Your hand has no backup equity if called — checking is the safe play.";
   }
   return "";
 }
@@ -332,15 +335,18 @@ function buildPostflop(ctx) {
     var feNote = foldEqPhrase(ctx);
 
     if (draws.length > 0 && ["good", "strong", "monster"].indexOf(info.category) === -1) {
-      return hd + tp + (origHd !== "Nothing" ? dp : "") + " — not much yet, but outs if called." + feNote + szNote;
+      return hd + tp + (origHd !== "Nothing" ? dp : "") + " — semi-bluff. You win if they fold now, or hit your draw if called." + feNote + szNote;
     }
     if ((info.category === "trash" || info.category === "weak") && ctx.heroHasInitiative) {
-      return hd + tp + " — continuation bet." + feNote + szNote + initNote;
+      return hd + tp + " — continuation bet. Fold equity makes this profitable." + feNote + szNote + initNote;
+    }
+    if ((info.category === "trash" || info.category === "weak") && !ctx.heroHasInitiative) {
+      return hd + tp + " — probe bet. Their check caps their range — fold equity makes this profitable." + feNote + szNote + initNote;
     }
     if (recon === "weak_hand_strong_eq") {
       return weakHandBridge(info, opp, mcEq, false) + " Worse hands will call." + szNote + eqStr;
     }
-    return hd + tp + " — worse hands will call." + szNote + eqStr + " " + oppNote(opp, false, best, postflopSit) + initNote;
+    return hd + tp + " — value bet. Worse hands will call." + szNote + eqStr + " " + oppNote(opp, false, best, postflopSit) + initNote;
   }
 
   // CHECK
